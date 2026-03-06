@@ -105,8 +105,8 @@ async function discoverOpenCodeSessionIdsByTitle(
     const { stdout } = await execFileAsync("opencode", ["session", "list", "--format", "json"], {
       timeout: timeoutMs,
     });
-    const parsed = safeJsonParse<Array<Record<string, unknown>>>(stdout);
-    if (!parsed) return [];
+    const parsed = safeJsonParse<unknown>(stdout);
+    if (!Array.isArray(parsed)) return [];
     const title = `AO:${sessionId}`;
     const candidates = parsed.filter((entry) => {
       const candidateTitle = typeof entry["title"] === "string" ? entry["title"] : "";
