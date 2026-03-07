@@ -1016,7 +1016,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     }
 
     // Get agent launch config — uses systemPromptFile, no issue/tracker interaction.
-    // Orchestrator ALWAYS gets skip permissions — it must run ao CLI commands autonomously.
+    // Orchestrator ALWAYS gets permissionless mode — it must run ao CLI commands autonomously.
     const agentLaunchConfig = {
       sessionId,
       projectConfig: {
@@ -1026,7 +1026,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           ...(reusableOpenCodeSessionId ? { opencodeSessionId: reusableOpenCodeSessionId } : {}),
         },
       },
-      permissions: "skip" as const,
+      permissions: "permissionless" as const,
       model: project.agentConfig?.orchestratorModel ?? project.agentConfig?.model,
       systemPromptFile,
       subagent: configuredSubagent,

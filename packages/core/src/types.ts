@@ -331,7 +331,7 @@ export interface AgentLaunchConfig {
   projectConfig: ProjectConfig;
   issueId?: string;
   prompt?: string;
-  permissions?: "skip" | "default";
+  permissions?: AgentPermissionMode;
   model?: string;
   /**
    * System prompt to pass to the agent for orchestrator context.
@@ -940,7 +940,7 @@ export interface NotifierConfig {
 }
 
 export interface AgentSpecificConfig {
-  permissions?: "skip" | "default";
+  permissions?: AgentPermissionMode;
   model?: string;
   orchestratorModel?: string;
   [key: string]: unknown;
@@ -948,6 +948,43 @@ export interface AgentSpecificConfig {
 
 export interface OpenCodeAgentConfig extends AgentSpecificConfig {
   opencodeSessionId?: string;
+}
+
+/**
+ * Canonical cross-agent permission policy mode.
+ *
+ * Semantics:
+ * - permissionless: run without interactive permission prompts (most permissive mode).
+ * - default: use the agent's normal/default permission model.
+ * - auto-edit: automatically approve edit actions where the agent supports granular approval policies.
+ * - suggest: conservative mode that asks for approval on higher-risk/untrusted actions where supported.
+ *
+ * Note: Not every agent exposes all granular policies; plugins map these modes to
+ * their closest supported behavior.
+ */
+export type AgentPermissionMode = "permissionless" | "default" | "auto-edit" | "suggest";
+
+/** Backward-compatible legacy alias accepted in config parsing. */
+export type LegacyAgentPermissionMode = "skip";
+
+/** Raw permission input (supports legacy aliases). */
+export type AgentPermissionInput = AgentPermissionMode | LegacyAgentPermissionMode;
+
+/** Normalize legacy aliases to canonical permission modes. */
+export function normalizeAgentPermissionMode(
+  mode: string | undefined,
+): AgentPermissionMode | undefined {
+  if (!mode) return undefined;
+  if (
+    mode !== "permissionless" &&
+    mode !== "default" &&
+    mode !== "auto-edit" &&
+    mode !== "suggest"
+  ) {
+    if (mode === "skip") return "permissionless";
+    return undefined;
+  }
+  return mode;
 }
 
 // =============================================================================
