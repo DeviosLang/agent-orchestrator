@@ -185,7 +185,6 @@ describe("loadBuiltins", () => {
     });
 
     expect(fakeWebhookNotifier.create).toHaveBeenCalledWith({
-      plugin: "webhook",
       url: "http://127.0.0.1:8787/hook",
       retries: 2,
       retryDelayMs: 500,
@@ -211,7 +210,6 @@ describe("loadBuiltins", () => {
     });
 
     expect(fakeWebhookNotifier.create).toHaveBeenCalledWith({
-      plugin: "webhook",
       url: "http://127.0.0.1:8787/custom-hook",
       retries: 4,
     });
