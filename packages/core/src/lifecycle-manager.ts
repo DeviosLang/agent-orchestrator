@@ -466,10 +466,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     return checks
       .map((check) => {
         const startedAt = check.startedAt ? check.startedAt.toISOString() : "";
-        const completedAt = check.completedAt ? check.completedAt.toISOString() : "";
-        const conclusion = check.conclusion ?? "";
         const url = check.url ?? "";
-        return `${check.name}|${check.status}|${conclusion}|${startedAt}|${completedAt}|${url}`;
+        return `${check.name}|${startedAt}|${url}`;
       })
       .sort()
       .join(",");
