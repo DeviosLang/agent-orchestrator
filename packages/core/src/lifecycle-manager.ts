@@ -405,6 +405,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     // 5. Default: if agent is active, it's working
     if (
       session.status === "spawning" ||
+      session.status === "idle" ||
       session.status === SESSION_STATUS.STUCK ||
       session.status === SESSION_STATUS.NEEDS_INPUT
     ) {
