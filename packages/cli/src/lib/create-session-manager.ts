@@ -61,3 +61,7 @@ export async function getLifecycleManager(
   const sessionManager = createSessionManager({ config, registry });
   return createLifecycleManager({ config, registry, sessionManager, projectId });
 }
+
+export async function getPluginRegistry(config: OrchestratorConfig): Promise<PluginRegistry> {
+  return getRegistry(config);
+}

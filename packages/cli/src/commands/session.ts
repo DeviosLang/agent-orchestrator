@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import chalk from "chalk";
 import type { Command } from "commander";
 import { loadConfig, SessionNotRestorableError, WorkspaceMissingError } from "@composio/ao-core";
+import { runRecovery, recoverSessionById, formatRecoveryReport } from "@composio/ao-core/recovery";
 import { git, getTmuxActivity, tmux } from "../lib/shell.js";
 import { formatAge } from "../lib/format.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
@@ -276,6 +277,101 @@ export function registerSession(program: Command): void {
         process.exit(1);
       }
     });
+
+  session
+    .command("recover")
+    .description("Recover orphaned/stale sessions after orchestrator restart")
+    .argument("[session]", "Session ID to recover (omit for --all)")
+    .option("--all", "Recover all orphaned sessions")
+    .option("--dry-run", "Show what would be recovered without doing it")
+    .option("-p, --project <id>", "Filter by project ID (with --all)")
+    .action(
+      async (
+        sessionId: string | undefined,
+        opts: { all?: boolean; dryRun?: boolean; project?: string },
+      ) => {
+        const config = loadConfig();
+
+        if (opts.project && !config.projects[opts.project]) {
+          console.error(chalk.red(`Unknown project: ${opts.project}`));
+          process.exit(1);
+        }
+
+        if (!opts.all && !sessionId) {
+          console.error(chalk.red("Specify a session ID or use --all to recover all sessions"));
+          process.exit(1);
+        }
+
+        const { createPluginRegistry } = await import("@composio/ao-core");
+        const registry = createPluginRegistry();
+        await registry.loadBuiltins(config);
+
+        if (opts.all || !sessionId) {
+          console.log(chalk.bold("Scanning for orphaned sessions...\n"));
+
+          const { report, assessments } = await runRecovery({
+            config,
+            registry,
+            dryRun: opts.dryRun,
+            projectFilter: opts.project,
+          });
+
+          if (opts.dryRun) {
+            for (const a of assessments) {
+              const color =
+                a.classification === "live"
+                  ? chalk.green
+                  : a.classification === "dead"
+                    ? chalk.red
+                    : a.classification === "partial"
+                      ? chalk.yellow
+                      : chalk.dim;
+              console.log(
+                color(`  ${a.sessionId}: ${a.classification} (${a.action}) - ${a.reason}`),
+              );
+            }
+            console.log(chalk.dim(`\nDry run complete. ${report.totalScanned} sessions scanned.`));
+          } else {
+            console.log(chalk.dim(`\nRecovery complete.`));
+            console.log(chalk.green(`  Recovered: ${report.recovered.length}`));
+            console.log(chalk.red(`  Cleaned up: ${report.cleanedUp.length}`));
+            console.log(chalk.yellow(`  Escalated: ${report.escalated.length}`));
+            if (report.errors.length > 0) {
+              console.log(chalk.red(`  Errors: ${report.errors.length}`));
+              for (const { sessionId: id, error } of report.errors) {
+                console.error(chalk.red(`    ${id}: ${error}`));
+              }
+            }
+          }
+        } else {
+          const result = await recoverSessionById(sessionId, {
+            config,
+            registry,
+            dryRun: opts.dryRun,
+          });
+
+          if (!result) {
+            console.error(chalk.red(`Session ${sessionId} not found.`));
+            process.exit(1);
+          }
+
+          if (opts.dryRun) {
+            console.log(chalk.dim(`Would ${result.action} session ${sessionId}`));
+          } else if (result.success) {
+            console.log(chalk.green(`Session ${sessionId}: ${result.action}`));
+            if (result.session) {
+              console.log(chalk.dim(`  Status: ${result.session.status}`));
+              if (result.session.workspacePath) {
+                console.log(chalk.dim(`  Workspace: ${result.session.workspacePath}`));
+              }
+            }
+          } else {
+            console.error(chalk.red(`Failed to recover ${sessionId}: ${result.error}`));
+            process.exit(1);
+          }
+        }
+      },
+    );
 
   session
     .command("remap")

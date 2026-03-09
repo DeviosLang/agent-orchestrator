@@ -102,3 +102,26 @@ export type {
   DetectedProjectInfo,
   GenerateConfigOptions,
 } from "./config-generator.js";
+
+// Recovery — session recovery after orchestrator restart
+export {
+  runRecovery,
+  recoverSessionById,
+  scanAllSessions,
+  validateSession,
+  executeAction,
+  formatRecoveryReport,
+} from "./recovery/index.js";
+export type {
+  RecoveryClassification,
+  RecoveryAction,
+  RecoveryAssessment,
+  RecoveryResult,
+  RecoveryReport,
+  RecoveryLogEntry,
+  RecoveryConfig,
+  RecoveryContext,
+  RecoveryManagerOptions,
+  RecoveryRunResult,
+  ScannedSession,
+} from "./recovery/index.js";

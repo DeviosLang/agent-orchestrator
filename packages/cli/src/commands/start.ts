@@ -25,12 +25,13 @@ import {
   generateConfigFromUrl,
   configToYaml,
   normalizeOrchestratorSessionStrategy,
+  runRecovery,
   type OrchestratorConfig,
   type ProjectConfig,
   type ParsedRepoUrl,
 } from "@composio/ao-core";
 import { exec, execSilent } from "../lib/shell.js";
-import { getSessionManager } from "../lib/create-session-manager.js";
+import { getSessionManager, getPluginRegistry } from "../lib/create-session-manager.js";
 import { ensureLifecycleWorker, stopLifecycleWorker } from "../lib/lifecycle-service.js";
 import {
   findWebDir,
@@ -257,7 +258,13 @@ async function runStartup(
   config: OrchestratorConfig,
   projectId: string,
   project: ProjectConfig,
-  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean; autoPort?: boolean },
+  opts?: {
+    dashboard?: boolean;
+    orchestrator?: boolean;
+    rebuild?: boolean;
+    autoPort?: boolean;
+    skipRecovery?: boolean;
+  },
 ): Promise<void> {
   const sessionId = `${project.sessionPrefix}-orchestrator`;
   const shouldStartLifecycle = opts?.dashboard !== false || opts?.orchestrator !== false;
@@ -272,6 +279,28 @@ async function runStartup(
   const spinner = ora();
   let dashboardProcess: ChildProcess | null = null;
   let reused = false;
+
+  if (opts?.skipRecovery !== true) {
+    try {
+      spinner.start("Running session recovery");
+      const registry = await getPluginRegistry(config);
+      const { report } = await runRecovery({
+        config,
+        registry,
+        dryRun: false,
+        projectFilter: projectId,
+      });
+      if (report.totalScanned > 0) {
+        spinner.succeed(
+          `Recovery: ${report.recovered.length} recovered, ${report.cleanedUp.length} cleaned, ${report.escalated.length} escalated`,
+        );
+      } else {
+        spinner.succeed("Recovery: no orphaned sessions");
+      }
+    } catch (err) {
+      spinner.warn(`Recovery skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   // Start dashboard (unless --no-dashboard)
   if (opts?.dashboard !== false) {
