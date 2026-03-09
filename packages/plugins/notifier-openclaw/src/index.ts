@@ -1,5 +1,4 @@
 import {
-  validateUrl,
   type EventPriority,
   type Notifier,
   type NotifyAction,
@@ -7,6 +6,11 @@ import {
   type OrchestratorEvent,
   type PluginModule,
 } from "@composio/ao-core";
+import {
+  isRetryableHttpStatus,
+  normalizeRetryConfig,
+  validateUrl,
+} from "@composio/ao-core/utils";
 
 export const manifest = {
   name: "openclaw",
@@ -23,10 +27,6 @@ interface OpenClawWebhookPayload {
   sessionKey?: string;
   wakeMode?: WakeMode;
   deliver?: boolean;
-}
-
-function isRetryableStatus(status: number): boolean {
-  return status === 429 || status >= 500;
 }
 
 async function postWithRetry(
@@ -52,7 +52,7 @@ async function postWithRetry(
       const body = await response.text();
       lastError = new Error(`OpenClaw webhook failed (${response.status}): ${body}`);
 
-      if (!isRetryableStatus(response.status)) {
+      if (!isRetryableHttpStatus(response.status)) {
         throw lastError;
       }
 
@@ -124,10 +124,7 @@ export function create(config?: Record<string, unknown>): Notifier {
   const wakeMode: WakeMode = config?.wakeMode === "next-heartbeat" ? "next-heartbeat" : "now";
   const deliver = typeof config?.deliver === "boolean" ? config.deliver : true;
 
-  const rawRetries = (config?.retries as number) ?? 2;
-  const rawDelay = (config?.retryDelayMs as number) ?? 1000;
-  const retries = Number.isFinite(rawRetries) ? Math.max(0, rawRetries) : 2;
-  const retryDelayMs = Number.isFinite(rawDelay) && rawDelay >= 0 ? rawDelay : 1000;
+  const { retries, retryDelayMs } = normalizeRetryConfig(config);
 
   validateUrl(url, "notifier-openclaw");
 
