@@ -6,7 +6,6 @@ import {
   type DashboardStats,
   type DashboardPR,
   type AttentionLevel,
-  type GlobalPauseState,
   getAttentionLevel,
   isPRRateLimited,
 } from "@/lib/types";
@@ -21,19 +20,12 @@ interface DashboardProps {
   stats: DashboardStats;
   orchestratorId?: string | null;
   projectName?: string;
-  initialGlobalPause?: GlobalPauseState | null;
 }
 
 const KANBAN_LEVELS = ["working", "pending", "review", "respond", "merge"] as const;
 
-export function Dashboard({
-  initialSessions,
-  stats,
-  orchestratorId,
-  projectName,
-  initialGlobalPause,
-}: DashboardProps) {
-  const { sessions, globalPause } = useSessionEvents(initialSessions, initialGlobalPause ?? null);
+export function Dashboard({ initialSessions, stats, orchestratorId, projectName }: DashboardProps) {
+  const sessions = useSessionEvents(initialSessions, projectName);
   const [rateLimitDismissed, setRateLimitDismissed] = useState(false);
   const grouped = useMemo(() => {
     const zones: Record<AttentionLevel, DashboardSession[]> = {
@@ -132,14 +124,6 @@ export function Dashboard({
           </a>
         )}
       </div>
-
-      {globalPause && (
-        <div className="mb-6 rounded border border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.07)] px-3.5 py-2.5 text-[11px] text-[var(--color-status-attention)]">
-          <span className="font-semibold">Orchestrator paused:</span> {globalPause.reason}. Resume
-          after {new Date(globalPause.pausedUntil).toLocaleString()}.
-          {globalPause.sourceSessionId ? ` Source: ${globalPause.sourceSessionId}.` : ""}
-        </div>
-      )}
 
       {/* Rate limit notice */}
       {anyRateLimited && !rateLimitDismissed && (
