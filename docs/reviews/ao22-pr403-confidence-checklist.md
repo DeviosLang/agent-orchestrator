@@ -168,6 +168,42 @@ Observed:
 - Stored tools: `bug_report`, `improvement_suggestion`.
 - Dedupe keys were valid 16-char hex values and round-tripped through `list()`.
 
+## WORK OpenClaw dogfood (Prateek environment)
+
+Status: PASS (operator-reported evidence)
+
+Source:
+- Report provided by Prateek from WORK OpenClaw (Slack) on 2026-03-10 around 9:44 PM (local).
+
+Reported context:
+- Repo: `ComposioHQ/agent-orchestrator`
+- Branch: `feat/399`
+- HEAD: `42cbf68`
+- Isolation: `/tmp/pr403-work-dogfood` and no existing sessions/config touched.
+
+Reported commands:
+
+```bash
+git fetch origin feat/399 && git checkout feat/399
+pnpm install --ignore-scripts
+pnpm --filter @composio/ao-core build
+pnpm --filter @composio/ao-core test -- src/__tests__/feedback-tools.test.ts
+npx tsx /tmp/pr403-work-dogfood/smoke-test.ts
+```
+
+Reported outcomes:
+- Block 1 (repo/branch/commit): PASS
+- Block 2 (focused tests): PASS (`10/10`)
+- Block 3 (persistence resilience): PASS
+- Block 4 (dedupe determinism): PASS
+- Block 5 (operator smoke + negatives): PASS
+- Final recommendation from WORK OpenClaw: `MERGE`
+
+Reported residual risks:
+1. Store does not dedupe-on-write; duplicate dedupe keys can be persisted as separate records.
+2. `list()` skips malformed `.kv` files silently.
+3. No explicit file lock (atomic write still used).
+
 ## Full focused suite command used
 
 ```bash
