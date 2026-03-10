@@ -10,6 +10,7 @@ import {
   readMetadataRaw,
   deleteMetadata,
   reserveSessionId,
+  updateMetadata,
 } from "../metadata.js";
 import { getSessionsDir, getProjectBaseDir, getWorktreesDir } from "../paths.js";
 import {
@@ -218,6 +219,29 @@ describe("spawn", () => {
     expect(mockAgent.getLaunchCommand).toHaveBeenCalled();
     // Verify runtime was created
     expect(mockRuntime.create).toHaveBeenCalled();
+  });
+
+  it("blocks spawn while the project is globally paused", async () => {
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: join(tmpDir, "my-app"),
+      branch: "main",
+      status: "working",
+      role: "orchestrator",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-orchestrator")),
+    });
+    updateMetadata(sessionsDir, "app-orchestrator", {
+      globalPauseUntil: new Date(Date.now() + 60_000).toISOString(),
+      globalPauseReason: "Rate limit reached",
+      globalPauseSource: "app-9",
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+
+    await expect(sm.spawn({ projectId: "my-app" })).rejects.toThrow(
+      "Project is paused due to model rate limit until",
+    );
+    expect(mockRuntime.create).not.toHaveBeenCalled();
   });
 
   it("uses issue ID to derive branch name", async () => {
@@ -2008,6 +2032,37 @@ describe("send", () => {
     await sm.send("app-1", "Fix the CI failures");
 
     expect(mockRuntime.sendMessage).toHaveBeenCalledWith(makeHandle("rt-1"), "Fix the CI failures");
+  });
+
+  it("blocks send to worker sessions while the project is globally paused", async () => {
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: join(tmpDir, "my-app"),
+      branch: "main",
+      status: "working",
+      role: "orchestrator",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-orchestrator")),
+    });
+    updateMetadata(sessionsDir, "app-orchestrator", {
+      globalPauseUntil: new Date(Date.now() + 60_000).toISOString(),
+      globalPauseReason: "Rate limit reached",
+      globalPauseSource: "app-9",
+    });
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+
+    await expect(sm.send("app-1", "Fix the CI failures")).rejects.toThrow(
+      "Project is paused due to model rate limit until",
+    );
+    expect(mockRuntime.sendMessage).not.toHaveBeenCalled();
   });
 
   it("restores a dead session before sending the message", async () => {
