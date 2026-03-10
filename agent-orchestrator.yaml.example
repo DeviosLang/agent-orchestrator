@@ -82,6 +82,14 @@ projects:
 #     plugin: slack
 #     webhook: ${SLACK_WEBHOOK_URL}
 #     channel: "#agent-updates"
+#
+#   webhook:
+#     plugin: webhook
+#     url: ${WEBHOOK_URL}
+#     headers:
+#       Authorization: "Bearer ${WEBHOOK_TOKEN}"
+#     retries: 2
+#     retryDelayMs: 1000
 
 # Notification routing by priority
 # notificationRouting:
