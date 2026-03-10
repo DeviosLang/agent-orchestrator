@@ -16,6 +16,7 @@ import { DynamicFavicon } from "./DynamicFavicon";
 import { useSessionEvents } from "@/hooks/useSessionEvents";
 import { ProjectSidebar } from "./ProjectSidebar";
 import type { ProjectInfo } from "@/lib/project-name";
+import type { GlobalPauseState } from "@/lib/types";
 
 interface DashboardProps {
   initialSessions: DashboardSession[];
@@ -24,6 +25,7 @@ interface DashboardProps {
   projectId?: string;
   projectName?: string;
   projects?: ProjectInfo[];
+  initialGlobalPause?: GlobalPauseState | null;
 }
 
 const KANBAN_LEVELS = ["working", "pending", "review", "respond", "merge"] as const;
@@ -35,9 +37,15 @@ export function Dashboard({
   projectId,
   projectName,
   projects = [],
+  initialGlobalPause = null,
 }: DashboardProps) {
-  const sessions = useSessionEvents(initialSessions, projectId);
+  const { sessions, globalPause } = useSessionEvents(
+    initialSessions,
+    initialGlobalPause,
+    projectId,
+  );
   const [rateLimitDismissed, setRateLimitDismissed] = useState(false);
+  const [globalPauseDismissed, setGlobalPauseDismissed] = useState(false);
   const showSidebar = projects.length > 1;
   const grouped = useMemo(() => {
     const zones: Record<AttentionLevel, DashboardSession[]> = {
@@ -138,6 +146,43 @@ export function Dashboard({
             </a>
           )}
         </div>
+
+        {/* Global pause banner */}
+        {globalPause && !globalPauseDismissed && (
+          <div className="mb-6 flex items-center gap-2.5 rounded border border-[rgba(239,68,68,0.25)] bg-[rgba(239,68,68,0.05)] px-3.5 py-2.5 text-[11px] text-[var(--color-status-error)]">
+            <svg
+              className="h-3.5 w-3.5 shrink-0"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4M12 16h.01" />
+            </svg>
+            <span className="flex-1">
+              <strong>Orchestrator paused:</strong> {globalPause.reason}
+              {globalPause.sourceSessionId && (
+                <span className="ml-2 opacity-75">(Source: {globalPause.sourceSessionId})</span>
+              )}
+            </span>
+            <button
+              onClick={() => setGlobalPauseDismissed(true)}
+              className="ml-1 shrink-0 opacity-60 hover:opacity-100"
+              aria-label="Dismiss"
+            >
+              <svg
+                className="h-3.5 w-3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
 
         {/* Rate limit notice */}
         {anyRateLimited && !rateLimitDismissed && (
