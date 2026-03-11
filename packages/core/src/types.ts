@@ -38,6 +38,7 @@ export type SessionStatus =
   | "stuck"
   | "errored"
   | "killed"
+  | "idle"
   | "done"
   | "terminated";
 
@@ -85,6 +86,7 @@ export const SESSION_STATUS = {
   NEEDS_INPUT: "needs_input" as const,
   STUCK: "stuck" as const,
   ERRORED: "errored" as const,
+  IDLE: "idle" as const,
   KILLED: "killed" as const,
   DONE: "done" as const,
   TERMINATED: "terminated" as const,
@@ -178,6 +180,12 @@ export interface SessionSpawnConfig {
   prompt?: string;
   /** Override the agent plugin for this session (e.g. "codex", "claude-code") */
   agent?: string;
+  /** Override the OpenCode subagent for this session (e.g. "sisyphus", "oracle") */
+  subagent?: string;
+  /** Decomposition context — ancestor task chain (passed to prompt builder) */
+  lineage?: string[];
+  /** Decomposition context — sibling task descriptions (passed to prompt builder) */
+  siblings?: string[];
 }
 
 /** Config for creating an orchestrator session */
@@ -329,7 +337,7 @@ export interface AgentLaunchConfig {
   projectConfig: ProjectConfig;
   issueId?: string;
   prompt?: string;
-  permissions?: AgentPermissionMode;
+  permissions?: AgentPermissionInput;
   model?: string;
   /**
    * System prompt to pass to the agent for orchestrator context.
@@ -352,6 +360,12 @@ export interface AgentLaunchConfig {
    * - Codex/Aider: similar shell substitution
    */
   systemPromptFile?: string;
+  /**
+   * Specialized OpenCode subagent to use (e.g., sisyphus, oracle, librarian).
+   * Requires oh-my-opencode to be installed.
+   * Use --subagent flag to select the subagent.
+   */
+  subagent?: string;
 }
 
 export interface WorkspaceHooksConfig {
@@ -480,6 +494,7 @@ export interface IssueFilters {
 export interface IssueUpdate {
   state?: "open" | "in_progress" | "closed";
   labels?: string[];
+  removeLabels?: string[];
   assignee?: string;
   comment?: string;
 }
@@ -502,6 +517,16 @@ export interface CreateIssueInput {
  */
 export interface SCM {
   readonly name: string;
+
+  verifyWebhook?(
+    request: SCMWebhookRequest,
+    project: ProjectConfig,
+  ): Promise<SCMWebhookVerificationResult>;
+
+  parseWebhook?(
+    request: SCMWebhookRequest,
+    project: ProjectConfig,
+  ): Promise<SCMWebhookEvent | null>;
 
   // --- PR Lifecycle ---
 
@@ -585,6 +610,42 @@ export const PR_STATE = {
 } satisfies Record<string, PRState>;
 
 export type MergeMethod = "merge" | "squash" | "rebase";
+
+export interface SCMWebhookRequest {
+  method: string;
+  headers: Record<string, string | string[] | undefined>;
+  body: string;
+  rawBody?: Uint8Array;
+  path?: string;
+  query?: Record<string, string | string[] | undefined>;
+}
+
+export interface SCMWebhookVerificationResult {
+  ok: boolean;
+  reason?: string;
+  deliveryId?: string;
+  eventType?: string;
+}
+
+export type SCMWebhookEventKind = "pull_request" | "ci" | "review" | "comment" | "push" | "unknown";
+
+export interface SCMWebhookEvent {
+  provider: string;
+  kind: SCMWebhookEventKind;
+  action: string;
+  rawEventType: string;
+  deliveryId?: string;
+  projectId?: string;
+  repository?: {
+    owner: string;
+    name: string;
+  };
+  prNumber?: number;
+  branch?: string;
+  sha?: string;
+  timestamp?: Date;
+  data: Record<string, unknown>;
+}
 
 // --- CI Types ---
 
@@ -721,6 +782,7 @@ export type EventType =
   | "session.working"
   | "session.exited"
   | "session.killed"
+  | "session.idle"
   | "session.stuck"
   | "session.needs_input"
   | "session.errored"
@@ -903,6 +965,28 @@ export interface ProjectConfig {
 
   /** Rules for the orchestrator agent (stored, reserved for future use) */
   orchestratorRules?: string;
+
+  orchestratorSessionStrategy?:
+    | "reuse"
+    | "delete"
+    | "ignore"
+    | "delete-new"
+    | "ignore-new"
+    | "kill-previous";
+
+  opencodeIssueSessionStrategy?: "reuse" | "delete" | "ignore";
+
+  /** Task decomposition configuration */
+  decomposer?: {
+    /** Enable auto-decomposition for backlog issues (default: false) */
+    enabled: boolean;
+    /** Max recursion depth (default: 3) */
+    maxDepth: number;
+    /** Model to use for decomposition (default: claude-sonnet-4-20250514) */
+    model: string;
+    /** Require human approval before executing decomposed plans (default: true) */
+    requireApproval: boolean;
+  };
 }
 
 export interface TrackerConfig {
@@ -913,7 +997,18 @@ export interface TrackerConfig {
 
 export interface SCMConfig {
   plugin: string;
+  webhook?: SCMWebhookConfig;
   [key: string]: unknown;
+}
+
+export interface SCMWebhookConfig {
+  enabled?: boolean;
+  path?: string;
+  secretEnvVar?: string;
+  signatureHeader?: string;
+  eventHeader?: string;
+  deliveryHeader?: string;
+  maxBodyBytes?: number;
 }
 
 export interface NotifierConfig {
@@ -924,7 +1019,12 @@ export interface NotifierConfig {
 export interface AgentSpecificConfig {
   permissions?: AgentPermissionMode;
   model?: string;
+  orchestratorModel?: string;
   [key: string]: unknown;
+}
+
+export interface OpenCodeAgentConfig extends AgentSpecificConfig {
+  opencodeSessionId?: string;
 }
 
 /**
@@ -952,7 +1052,12 @@ export function normalizeAgentPermissionMode(
   mode: string | undefined,
 ): AgentPermissionMode | undefined {
   if (!mode) return undefined;
-  if (mode !== "permissionless" && mode !== "default" && mode !== "auto-edit" && mode !== "suggest") {
+  if (
+    mode !== "permissionless" &&
+    mode !== "default" &&
+    mode !== "auto-edit" &&
+    mode !== "suggest"
+  ) {
     if (mode === "skip") return "permissionless";
     return undefined;
   }
@@ -1024,6 +1129,7 @@ export interface SessionMetadata {
   dashboardPort?: number;
   terminalWsPort?: number;
   directTerminalWsPort?: number;
+  opencodeSessionId?: string;
 }
 
 // =============================================================================
@@ -1037,15 +1143,23 @@ export interface SessionManager {
   restore(sessionId: SessionId): Promise<Session>;
   list(projectId?: string): Promise<Session[]>;
   get(sessionId: SessionId): Promise<Session | null>;
-  kill(sessionId: SessionId): Promise<void>;
-  cleanup(projectId?: string, options?: { dryRun?: boolean }): Promise<CleanupResult>;
+  kill(sessionId: SessionId, options?: { purgeOpenCode?: boolean }): Promise<void>;
+  cleanup(
+    projectId?: string,
+    options?: { dryRun?: boolean; purgeOpenCode?: boolean },
+  ): Promise<CleanupResult>;
   send(sessionId: SessionId, message: string): Promise<void>;
   claimPR(sessionId: SessionId, prRef: string, options?: ClaimPROptions): Promise<ClaimPRResult>;
 }
 
+/** OpenCode-specific session manager with remap capability */
+export interface OpenCodeSessionManager extends SessionManager {
+  /** Remap session to OpenCode session ID, returns the mapped OpenCode session ID */
+  remap(sessionId: SessionId, force?: boolean): Promise<string>;
+}
+
 export interface ClaimPROptions {
   assignOnGithub?: boolean;
-  takeover?: boolean;
 }
 
 export interface ClaimPRResult {
@@ -1056,6 +1170,11 @@ export interface ClaimPRResult {
   githubAssigned: boolean;
   githubAssignmentError?: string;
   takenOverFrom: SessionId[];
+}
+
+/** Type guard to check if a SessionManager supports OpenCode-specific remap operation */
+export function isOpenCodeSessionManager(sm: SessionManager): sm is OpenCodeSessionManager {
+  return typeof (sm as OpenCodeSessionManager).remap === "function";
 }
 
 export interface CleanupResult {
@@ -1152,5 +1271,13 @@ export class WorkspaceMissingError extends Error {
   ) {
     super(`Workspace missing at ${path}${detail ? `: ${detail}` : ""}`);
     this.name = "WorkspaceMissingError";
+  }
+}
+
+/** Thrown when a session lookup fails (session does not exist). */
+export class SessionNotFoundError extends Error {
+  constructor(public readonly sessionId: string) {
+    super(`Session not found: ${sessionId}`);
+    this.name = "SessionNotFoundError";
   }
 }

@@ -9,25 +9,45 @@ import {
   enrichSessionsMetadata,
   computeStats,
 } from "@/lib/serialize";
+import { resolveGlobalPause } from "@/lib/global-pause";
+import { filterWorkerSessions, findOrchestratorSessionId } from "@/lib/project-utils";
 
-/** GET /api/sessions — List all sessions with full state
+const METADATA_ENRICH_TIMEOUT_MS = 3_000;
+const PR_ENRICH_TIMEOUT_MS = 4_000;
+const PER_PR_ENRICH_TIMEOUT_MS = 1_500;
+
+async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<boolean>((resolve) => {
+    timeoutId = setTimeout(() => resolve(false), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise.then(() => true).catch(() => true), timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+/** GET /api/sessions — List sessions with full state
  * Query params:
+ * - project: Filter to a specific project (by projectId or sessionPrefix). "all" = no filter.
  * - active=true: Only return non-exited sessions
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const projectFilter = searchParams.get("project");
     const activeOnly = searchParams.get("active") === "true";
 
     const { config, registry, sessionManager } = await getServices();
     const coreSessions = await sessionManager.list();
 
-    // Find orchestrator session ID (if running) and expose to clients
-    const orchSession = coreSessions.find((s) => s.id.endsWith("-orchestrator"));
-    const orchestratorId = orchSession ? orchSession.id : null;
+    const orchestratorId = findOrchestratorSessionId(coreSessions, projectFilter, config.projects);
 
-    // Filter out orchestrator sessions — they get their own button, not a card
-    let workerSessions = coreSessions.filter((s) => !s.id.endsWith("-orchestrator"));
+    let workerSessions = filterWorkerSessions(coreSessions, projectFilter, config.projects);
 
     // Convert to dashboard format
     let dashboardSessions = workerSessions.map(sessionToDashboard);
@@ -41,35 +61,47 @@ export async function GET(request: Request) {
       dashboardSessions = activeIndices.map((i) => dashboardSessions[i]);
     }
 
-    // Enrich metadata (issue labels, agent summaries, issue titles) — cap at 3s
-    const metaTimeout = new Promise<void>((resolve) => setTimeout(resolve, 3_000));
-    await Promise.race([enrichSessionsMetadata(workerSessions, dashboardSessions, config, registry), metaTimeout]);
+    const metadataSettled = await settlesWithin(
+      enrichSessionsMetadata(workerSessions, dashboardSessions, config, registry),
+      METADATA_ENRICH_TIMEOUT_MS,
+    );
 
-    // Enrich sessions that have PRs with live SCM data (CI, reviews, mergeability)
-    const enrichPromises = workerSessions.map((core, i) => {
-      if (!core.pr) return Promise.resolve();
-      const project = resolveProject(core, config.projects);
-      const scm = getSCM(registry, project);
-      if (!scm) return Promise.resolve();
-      if (!project) return Promise.resolve();
-      const sessionsDir = resolveSessionsDir(config.configPath, project.path);
-      return enrichSessionPR(dashboardSessions[i], scm, core.pr, {
-        metadata: sessionsDir
-          ? {
-              sessionsDir,
-              sessionId: core.id,
-              currentStatus: core.status,
-            }
-          : undefined,
-      });
-    });
-    const enrichTimeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
-    await Promise.race([Promise.allSettled(enrichPromises), enrichTimeout]);
+    if (metadataSettled) {
+      const prDeadlineAt = Date.now() + PR_ENRICH_TIMEOUT_MS;
+      for (let i = 0; i < workerSessions.length; i++) {
+        const core = workerSessions[i];
+        if (!core?.pr) continue;
+
+        const remainingMs = prDeadlineAt - Date.now();
+        if (remainingMs <= 0) break;
+
+        const project = resolveProject(core, config.projects);
+        const scm = getSCM(registry, project);
+        if (!scm) continue;
+        if (!project) continue;
+
+        const sessionsDir = resolveSessionsDir(config.configPath, project.path);
+
+        await settlesWithin(
+          enrichSessionPR(dashboardSessions[i], scm, core.pr, {
+            metadata: sessionsDir
+              ? {
+                  sessionsDir,
+                  sessionId: core.id,
+                  currentStatus: core.status,
+                }
+              : undefined,
+          }),
+          Math.min(remainingMs, PER_PR_ENRICH_TIMEOUT_MS),
+        );
+      }
+    }
 
     return NextResponse.json({
       sessions: dashboardSessions,
       stats: computeStats(dashboardSessions),
       orchestratorId,
+      globalPause: resolveGlobalPause(coreSessions),
     });
   } catch (err) {
     return NextResponse.json(
