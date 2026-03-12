@@ -244,7 +244,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       scm &&
       session.branch &&
       session.metadata["prAutoDetect"] !== "off" &&
-      session.metadata["role"] !== "orchestrator"
+      session.metadata["role"] !== "orchestrator" &&
+      !session.id.endsWith("-orchestrator")
     ) {
       try {
         const detectedPR = await scm.detectPR(session, project);
