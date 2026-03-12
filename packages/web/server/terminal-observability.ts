@@ -4,6 +4,7 @@ import {
   type OrchestratorConfig,
   type ProjectObserver,
 } from "@composio/ao-core";
+import { resolveProjectIdForSessionId } from "../src/lib/session-project.js";
 
 export function createObserverContext(surface: string): {
   config: OrchestratorConfig | undefined;
@@ -24,16 +25,5 @@ export function inferProjectId(
   config: OrchestratorConfig | undefined,
   sessionId: string,
 ): string | undefined {
-  if (!config) {
-    return undefined;
-  }
-
-  for (const [projectId, project] of Object.entries(config.projects)) {
-    const prefix = project.sessionPrefix;
-    if (sessionId === prefix || sessionId.startsWith(`${prefix}-`)) {
-      return projectId;
-    }
-  }
-
-  return undefined;
+  return config ? resolveProjectIdForSessionId(config, sessionId) : undefined;
 }

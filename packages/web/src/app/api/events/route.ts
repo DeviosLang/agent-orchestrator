@@ -30,7 +30,11 @@ export async function GET(request: Request): Promise<Response> {
 
   const ensureObserver = (config: ServicesConfig): ProjectObserver | null => {
     if (!observerProjectId) {
-      observerProjectId = Object.keys(config.projects)[0];
+      const requestedProjectId =
+        projectFilter && projectFilter !== "all" && config.projects[projectFilter]
+          ? projectFilter
+          : undefined;
+      observerProjectId = requestedProjectId ?? Object.keys(config.projects)[0];
     }
     if (!observerProjectId) return null;
     if (!observer) {

@@ -6,6 +6,7 @@ import {
   type ObservabilitySummary,
 } from "@composio/ao-core";
 import { NextResponse } from "next/server";
+import { resolveProjectIdForSessionId } from "./session-project";
 
 let webApiObserver: ReturnType<typeof createProjectObserver> | null | undefined;
 
@@ -71,18 +72,7 @@ export function recordApiObservation(input: ApiObservationInput): void {
   }
 }
 
-export function resolveProjectIdForSessionId(
-  config: OrchestratorConfig,
-  sessionId: string,
-): string | undefined {
-  for (const [projectId, project] of Object.entries(config.projects)) {
-    const prefix = project.sessionPrefix;
-    if (sessionId === prefix || sessionId.startsWith(`${prefix}-`)) {
-      return projectId;
-    }
-  }
-  return undefined;
-}
+export { resolveProjectIdForSessionId };
 
 export function getObservabilitySummary(config: OrchestratorConfig): ObservabilitySummary {
   try {
