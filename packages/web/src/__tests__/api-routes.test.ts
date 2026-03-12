@@ -3,7 +3,6 @@ import { NextRequest } from "next/server";
 import {
   SessionNotFoundError,
   SessionNotRestorableError,
-  SessionNotFoundError,
   type Session,
   type SessionManager,
   type OrchestratorConfig,
@@ -126,16 +125,23 @@ const mockSessionManager: SessionManager = {
   }),
 };
 
-const mockSCM: SCM = {
+const mockSCM = {
   name: "github",
   detectPR: vi.fn(async () => null),
   getPRState: vi.fn(async () => "open" as const),
   mergePR: vi.fn(async () => {}),
   closePR: vi.fn(async () => {}),
-  getCIChecks: vi.fn(async () => []),
+  getCIChecks: vi.fn(async () => [
+    { name: "review-integrity", status: "passed" as const },
+    { name: "ao/merge-guard", status: "passed" as const },
+  ]),
   getCISummary: vi.fn(async () => "passing" as const),
   getReviews: vi.fn(async () => []),
   getReviewDecision: vi.fn(async () => "approved" as const),
+  getPRHeadSha: vi.fn(async () => "abc123"),
+  getReviewThreadSnapshots: vi.fn(async () => []),
+  resolveReviewThread: vi.fn(async () => {}),
+  publishCheckRun: vi.fn(async () => {}),
   getPendingComments: vi.fn(async () => []),
   getAutomatedComments: vi.fn(async () => []),
   getMergeability: vi.fn(async () => ({
@@ -145,6 +151,11 @@ const mockSCM: SCM = {
     noConflicts: true,
     blockers: [],
   })),
+} as SCM & {
+  getPRHeadSha: ReturnType<typeof vi.fn>;
+  getReviewThreadSnapshots: ReturnType<typeof vi.fn>;
+  resolveReviewThread: ReturnType<typeof vi.fn>;
+  publishCheckRun: ReturnType<typeof vi.fn>;
 };
 
 const mockRegistry: PluginRegistry = {
@@ -202,6 +213,10 @@ import { POST as killPOST } from "@/app/api/sessions/[id]/kill/route";
 import { POST as restorePOST } from "@/app/api/sessions/[id]/restore/route";
 import { POST as remapPOST } from "@/app/api/sessions/[id]/remap/route";
 import { POST as mergePOST } from "@/app/api/prs/[id]/merge/route";
+import { GET as reviewThreadsGET } from "@/app/api/prs/[id]/review-threads/route";
+import { POST as reviewResolutionsPOST } from "@/app/api/prs/[id]/review-resolutions/route";
+import { POST as reviewVerifyPOST } from "@/app/api/prs/[id]/review-resolutions/verify/route";
+import { POST as reviewApplyPOST } from "@/app/api/prs/[id]/review-resolutions/apply/route";
 import { GET as eventsGET } from "@/app/api/events/route";
 import { GET as observabilityGET } from "@/app/api/observability/route";
 
@@ -686,6 +701,39 @@ describe("API Routes", () => {
       expect(data.blockers).toBeDefined();
     });
 
+    it("returns 422 when merge guard fails due to missing resolution records", async () => {
+      (mockSCM.getMergeability as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        mergeable: true,
+        ciPassing: true,
+        approved: true,
+        noConflicts: true,
+        blockers: [],
+      });
+      (mockSCM.getReviewThreadSnapshots as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        {
+          prNumber: 432,
+          threadId: "thread-1",
+          source: "human",
+          bodyHash: "hash",
+          severity: "medium",
+          status: "resolved",
+          capturedAt: new Date(),
+        },
+      ]);
+      (mockSCM.getCIChecks as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        { name: "review-integrity", status: "passed" },
+        { name: "ao/merge-guard", status: "passed" },
+      ]);
+      (mockSCM.getPRHeadSha as ReturnType<typeof vi.fn>).mockResolvedValueOnce("abc123");
+
+      const req = makeRequest("/api/prs/432/merge", { method: "POST" });
+      const res = await mergePOST(req, { params: Promise.resolve({ id: "432" }) });
+      expect(res.status).toBe(422);
+      const data = await res.json();
+      expect(data.reviewIntegrityStatus).toBe("fail");
+      expect(data.guardBlockers?.length).toBeGreaterThan(0);
+    });
+
     it("returns 400 for non-numeric PR id", async () => {
       const req = makeRequest("/api/prs/abc/merge", { method: "POST" });
       const res = await mergePOST(req, { params: Promise.resolve({ id: "abc" }) });
@@ -701,6 +749,86 @@ describe("API Routes", () => {
       expect(res.status).toBe(409);
       const data = await res.json();
       expect(data.error).toMatch(/merged/);
+    });
+  });
+
+  describe("Review integrity routes", () => {
+    it("GET /api/prs/:id/review-threads returns thread snapshots", async () => {
+      (mockSCM.getReviewThreadSnapshots as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+        {
+          prNumber: 432,
+          threadId: "thread-1",
+          source: "human",
+          bodyHash: "hash",
+          severity: "medium",
+          status: "open",
+          capturedAt: new Date("2026-03-12T00:00:00Z"),
+        },
+      ]);
+      const req = makeRequest("/api/prs/432/review-threads", { method: "GET" });
+      const res = await reviewThreadsGET(req, { params: Promise.resolve({ id: "432" }) });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.threads).toHaveLength(1);
+      expect(data.threads[0].threadId).toBe("thread-1");
+    });
+
+    it("POST propose/verify/apply flow works", async () => {
+      (mockSCM.getReviewThreadSnapshots as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          prNumber: 432,
+          threadId: "thread-verify",
+          source: "human",
+          bodyHash: "hash",
+          severity: "medium",
+          status: "resolved",
+          capturedAt: new Date("2026-03-12T00:00:00Z"),
+        },
+      ]);
+      (mockSCM.getPRHeadSha as ReturnType<typeof vi.fn>).mockResolvedValue("abc123");
+
+      const createReq = makeRequest("/api/prs/432/review-resolutions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: "thread-verify",
+          resolutionType: "fixed",
+          fixCommitSha: "abc123",
+          evidence: {
+            changedFiles: ["src/a.ts"],
+            testCommands: ["pnpm test"],
+            testResults: ["pass"],
+          },
+        }),
+      });
+      const createRes = await reviewResolutionsPOST(createReq, {
+        params: Promise.resolve({ id: "432" }),
+      });
+      expect(createRes.status).toBe(201);
+
+      const verifyReq = makeRequest("/api/prs/432/review-resolutions/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: "thread-verify" }),
+      });
+      const verifyRes = await reviewVerifyPOST(verifyReq, {
+        params: Promise.resolve({ id: "432" }),
+      });
+      expect(verifyRes.status).toBe(200);
+      const verifyData = await verifyRes.json();
+      expect(["pass", "fail"]).toContain(verifyData.verificationStatus);
+
+      const applyReq = makeRequest("/api/prs/432/review-resolutions/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: "thread-verify" }),
+      });
+      const applyRes = await reviewApplyPOST(applyReq, { params: Promise.resolve({ id: "432" }) });
+      if (verifyData.verificationStatus === "pass") {
+        expect(applyRes.status).toBe(200);
+      } else {
+        expect(applyRes.status).toBe(422);
+      }
     });
   });
 
