@@ -16,6 +16,7 @@ Thanks for your interest in contributing. This guide covers how to report bugs, 
 Open an issue at [github.com/ComposioHQ/agent-orchestrator/issues](https://github.com/ComposioHQ/agent-orchestrator/issues).
 
 Include:
+
 - `ao --version` output
 - OS and Node.js version (`node --version`)
 - Steps to reproduce
@@ -54,6 +55,18 @@ cp agent-orchestrator.yaml.example agent-orchestrator.yaml
 pnpm --filter @composio/ao-web dev
 ```
 
+### Refreshing a local AO install
+
+If your local `ao` launcher or built packages seem stale, refresh the install from a clean `main` checkout:
+
+```bash
+git switch main
+git status --short --branch   # confirm the install repo is clean
+ao update
+```
+
+`ao update` fast-forwards the local install repo, reinstalls dependencies, clean-rebuilds `@composio/ao-core`, `@composio/ao-cli`, and `@composio/ao-web`, refreshes the global launcher with `npm link`, and finishes with CLI smoke tests. Use `ao update --skip-smoke` when you only need the rebuild step, or `ao update --smoke-only` when validating an existing install.
+
 ---
 
 ## Building a Plugin
@@ -64,15 +77,15 @@ The plugin system is the primary extension point. You can add support for new ag
 
 All plugin interfaces are in [`packages/core/src/types.ts`](packages/core/src/types.ts). Pick the slot that matches what you want to build:
 
-| Slot | Interface | Example use case |
-|------|-----------|-----------------|
-| `runtime` | `Runtime` | Run agents in Docker, SSH, cloud VMs |
-| `agent` | `Agent` | Adapt a new AI coding tool |
-| `workspace` | `Workspace` | Different code isolation strategies |
-| `tracker` | `Tracker` | Jira, Asana, or custom issue systems |
-| `scm` | `SCM` | GitLab, Bitbucket support |
-| `notifier` | `Notifier` | Email, Discord, custom webhooks |
-| `terminal` | `Terminal` | Different terminal UI integrations |
+| Slot        | Interface   | Example use case                     |
+| ----------- | ----------- | ------------------------------------ |
+| `runtime`   | `Runtime`   | Run agents in Docker, SSH, cloud VMs |
+| `agent`     | `Agent`     | Adapt a new AI coding tool           |
+| `workspace` | `Workspace` | Different code isolation strategies  |
+| `tracker`   | `Tracker`   | Jira, Asana, or custom issue systems |
+| `scm`       | `SCM`       | GitLab, Bitbucket support            |
+| `notifier`  | `Notifier`  | Email, Discord, custom webhooks      |
+| `terminal`  | `Terminal`  | Different terminal UI integrations   |
 
 ### 2. Create the package
 
@@ -119,10 +132,18 @@ export const manifest = {
 export function create(): Runtime {
   return {
     name: "myplugin",
-    async create(config) { /* start session */ },
-    async destroy(sessionName) { /* tear down */ },
-    async send(sessionName, text) { /* send input */ },
-    async isRunning(sessionName) { return false; },
+    async create(config) {
+      /* start session */
+    },
+    async destroy(sessionName) {
+      /* tear down */
+    },
+    async send(sessionName, text) {
+      /* send input */
+    },
+    async isRunning(sessionName) {
+      return false;
+    },
   };
 }
 
@@ -165,20 +186,23 @@ pnpm --filter @composio/ao-runtime-myplugin test
 
 ## Code Conventions
 
-See [CLAUDE.md](CLAUDE.md) for the full reference. The short version:
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full reference. The short version:
 
 **TypeScript**
+
 - ESM modules, `.js` extensions on local imports
 - `node:` prefix for builtins
 - No `any` — use `unknown` + type guards
 - Strict mode, semicolons, double quotes, 2-space indent
 
 **Shell commands**
+
 - Always `execFile`, never `exec`
 - Always pass args as an array, never interpolate into strings
 - Always add timeouts
 
 **Tests**
+
 - Unit tests alongside source in `src/__tests__/`
 - Mock plugins in tests — don't call real tmux, GitHub, or external services
 - Test the interface contract, not internal implementation details
@@ -188,6 +212,7 @@ See [CLAUDE.md](CLAUDE.md) for the full reference. The short version:
 ## Pull Request Process
 
 1. **Fork and branch** from `main`:
+
    ```bash
    git checkout -b feat/your-feature
    ```
@@ -195,6 +220,7 @@ See [CLAUDE.md](CLAUDE.md) for the full reference. The short version:
 2. **Make your changes** — keep PRs focused on one thing.
 
 3. **Build, test, lint**:
+
    ```bash
    pnpm build
    pnpm test
@@ -203,6 +229,7 @@ See [CLAUDE.md](CLAUDE.md) for the full reference. The short version:
    ```
 
 4. **Commit** with [Conventional Commits](https://www.conventionalcommits.org/):
+
    ```
    feat: add kubernetes runtime plugin
    fix: handle missing LINEAR_API_KEY gracefully
@@ -221,12 +248,13 @@ See [CLAUDE.md](CLAUDE.md) for the full reference. The short version:
 
 - Does the change work as described?
 - Are there tests?
-- Does it follow the TypeScript and shell conventions in [CLAUDE.md](CLAUDE.md)?
+- Does it follow the TypeScript and shell conventions in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)?
 - For new features: is it documented?
 
 ### CI checks
 
 All PRs must pass:
+
 - `pnpm build` — no TypeScript errors
 - `pnpm test` — all tests green
 - `pnpm lint` — no lint errors

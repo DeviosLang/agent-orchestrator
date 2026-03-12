@@ -20,16 +20,16 @@ packages/
 
 Every abstraction is a swappable plugin. All interfaces are defined in [`packages/core/src/types.ts`](../packages/core/src/types.ts).
 
-| Slot | Interface | Default | Alternatives |
-|------|-----------|---------|--------------|
-| Runtime | `Runtime` | `tmux` | `process`, `docker`, `k8s`, `ssh`, `e2b` |
-| Agent | `Agent` | `claude-code` | `codex`, `aider`, `opencode` |
-| Workspace | `Workspace` | `worktree` | `clone` |
-| Tracker | `Tracker` | `github` | `linear` |
-| SCM | `SCM` | `github` | — |
-| Notifier | `Notifier` | `desktop` | `slack`, `webhook`, `composio` |
-| Terminal | `Terminal` | `iterm2` | `web` |
-| Lifecycle | — | (core) | Non-pluggable |
+| Slot      | Interface   | Default       | Alternatives                             |
+| --------- | ----------- | ------------- | ---------------------------------------- |
+| Runtime   | `Runtime`   | `tmux`        | `process`, `docker`, `k8s`, `ssh`, `e2b` |
+| Agent     | `Agent`     | `claude-code` | `codex`, `aider`, `opencode`             |
+| Workspace | `Workspace` | `worktree`    | `clone`                                  |
+| Tracker   | `Tracker`   | `github`      | `linear`                                 |
+| SCM       | `SCM`       | `github`      | —                                        |
+| Notifier  | `Notifier`  | `desktop`     | `slack`, `webhook`, `composio`           |
+| Terminal  | `Terminal`  | `iterm2`      | `web`                                    |
+| Lifecycle | —           | (core)        | Non-pluggable                            |
 
 ### Hash-Based Namespacing
 
@@ -37,11 +37,12 @@ All runtime data paths are derived from a SHA-256 hash of the config file direct
 
 ```typescript
 const hash = sha256(path.dirname(configPath)).slice(0, 12); // e.g. "a3b4c5d6e7f8"
-const instanceId = `${hash}-${projectId}`;                  // e.g. "a3b4c5d6e7f8-myapp"
+const instanceId = `${hash}-${projectId}`; // e.g. "a3b4c5d6e7f8-myapp"
 const dataDir = `~/.agent-orchestrator/${instanceId}`;
 ```
 
 This means:
+
 - Multiple orchestrator checkouts on the same machine never collide
 - Session names are globally unique in tmux: `{hash}-{prefix}-{num}`
 - User-facing names stay clean: `ao-1`, `myapp-2`
@@ -60,16 +61,16 @@ Activity states (orthogonal to lifecycle): `active`, `ready`, `idle`, `waiting_i
 
 ### Key Services
 
-| File | Purpose |
-|------|---------|
-| `packages/core/src/session-manager.ts` | Session CRUD: spawn, list, kill, send, restore |
-| `packages/core/src/lifecycle-manager.ts` | State machine, polling loop, reactions engine |
-| `packages/core/src/prompt-builder.ts` | 3-layer prompt assembly (base + config + rules) |
-| `packages/core/src/config.ts` | Config loading and Zod validation |
-| `packages/core/src/plugin-registry.ts` | Plugin discovery, loading, resolution |
-| `packages/core/src/agent-selection.ts` | Resolves worker vs orchestrator agent roles |
-| `packages/core/src/observability.ts` | Correlation IDs, structured logging, metrics |
-| `packages/core/src/paths.ts` | Hash-based path and session name generation |
+| File                                     | Purpose                                         |
+| ---------------------------------------- | ----------------------------------------------- |
+| `packages/core/src/session-manager.ts`   | Session CRUD: spawn, list, kill, send, restore  |
+| `packages/core/src/lifecycle-manager.ts` | State machine, polling loop, reactions engine   |
+| `packages/core/src/prompt-builder.ts`    | 3-layer prompt assembly (base + config + rules) |
+| `packages/core/src/config.ts`            | Config loading and Zod validation               |
+| `packages/core/src/plugin-registry.ts`   | Plugin discovery, loading, resolution           |
+| `packages/core/src/agent-selection.ts`   | Resolves worker vs orchestrator agent roles     |
+| `packages/core/src/observability.ts`     | Correlation IDs, structured logging, metrics    |
+| `packages/core/src/paths.ts`             | Hash-based path and session name generation     |
 
 ---
 
@@ -122,6 +123,7 @@ agent-orchestrator/
 ## Development Workflow
 
 1. **Create a feature branch**
+
    ```bash
    git checkout -b feat/your-feature
    ```
@@ -129,17 +131,36 @@ agent-orchestrator/
 2. **Make your changes** — follow conventions below, add tests, update docs
 
 3. **Build and test**
+
    ```bash
    pnpm build && pnpm test && pnpm lint && pnpm typecheck
    ```
 
 4. **Commit** using [Conventional Commits](https://www.conventionalcommits.org/)
+
    ```bash
    git commit -m "feat: add your feature"
    ```
+
    Pre-commit hook scans for secrets automatically.
 
 5. **Push and open a PR**
+
+---
+
+## Keeping the local AO install current
+
+When you are developing Agent Orchestrator from a long-lived local checkout, refresh the local `ao` install before debugging launcher or packaging issues:
+
+```bash
+git switch main
+git status --short --branch   # `ao update` expects a clean working tree on main
+ao update
+```
+
+`ao update` is intentionally conservative: it fast-forwards the local install checkout from `origin/main`, runs `pnpm install`, clean-rebuilds `@composio/ao-core`, `@composio/ao-cli`, and `@composio/ao-web`, refreshes the global launcher with `npm link`, and ends with CLI smoke tests. Use `ao update --skip-smoke` to stop after the rebuild, or `ao update --smoke-only` to rerun the smoke checks without fetching or rebuilding.
+
+If your branch has drift from `main`, update the install checkout first and then return to your feature worktree. That keeps CLI behavior and generated docs aligned with the version contributors are expected to run.
 
 ---
 
@@ -214,10 +235,18 @@ export const manifest = {
 export function create(): Runtime {
   return {
     name: "myplugin",
-    async create(config) { /* start session */ },
-    async destroy(sessionName) { /* tear down */ },
-    async send(sessionName, text) { /* send input */ },
-    async isRunning(sessionName) { return false; },
+    async create(config) {
+      /* start session */
+    },
+    async destroy(sessionName) {
+      /* tear down */
+    },
+    async send(sessionName, text) {
+      /* send input */
+    },
+    async isRunning(sessionName) {
+      return false;
+    },
   };
 }
 
@@ -299,6 +328,7 @@ pnpm test:integration
 ```
 
 Key test files in core (`src/__tests__/`):
+
 - `session-manager.test.ts` — session CRUD and spawn flow
 - `lifecycle-manager.test.ts` — state machine and reactions
 - `plugin-registry.test.ts` — plugin loading and resolution

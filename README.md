@@ -191,17 +191,17 @@ pnpm test                      # Run tests (3,288 test cases)
 pnpm dev                       # Start web dashboard dev server
 ```
 
-See [CLAUDE.md](CLAUDE.md) for code conventions and architecture details.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for code conventions and architecture details.
 
 ## Documentation
 
-| Doc                                   | What it covers                                               |
-| ------------------------------------- | ------------------------------------------------------------ |
-| [Setup Guide](SETUP.md)               | Detailed installation and configuration                      |
-| [Examples](examples/)                 | Config templates (GitHub, Linear, multi-project, auto-merge) |
-| [Development Guide](docs/DEVELOPMENT.md) | Architecture, conventions, plugin pattern                 |
-| [Contributing](CONTRIBUTING.md)       | How to contribute, build plugins, PR process                 |
-| [Troubleshooting](TROUBLESHOOTING.md) | Common issues and fixes                                      |
+| Doc                                      | What it covers                                               |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| [Setup Guide](SETUP.md)                  | Detailed installation and configuration                      |
+| [Examples](examples/)                    | Config templates (GitHub, Linear, multi-project, auto-merge) |
+| [Development Guide](docs/DEVELOPMENT.md) | Architecture, conventions, plugin pattern                    |
+| [Contributing](CONTRIBUTING.md)          | How to contribute, build plugins, PR process                 |
+| [Troubleshooting](TROUBLESHOOTING.md)    | Common issues and fixes                                      |
 
 ## Contributing
 
