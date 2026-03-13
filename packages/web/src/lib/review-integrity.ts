@@ -1,5 +1,4 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -28,20 +27,6 @@ export const REVIEW_INTEGRITY_DEFAULTS = {
   reverifyOnNewCommits: true,
 } as const;
 
-export interface ReviewIntegritySCM extends SCM {
-  getReviewThreadSnapshots?(pr: PRInfo): Promise<ReviewThreadSnapshot[]>;
-  getPRHeadSha?(pr: PRInfo): Promise<string>;
-  resolveReviewThread?(pr: PRInfo, threadId: string): Promise<void>;
-  publishCheckRun?(input: {
-    pr: PRInfo;
-    name: string;
-    status: "completed";
-    conclusion: "success" | "failure";
-    summary: string;
-    text?: string;
-  }): Promise<void>;
-}
-
 export function getReviewResolutionStore(
   config: OrchestratorConfig,
   project: ProjectConfig,
@@ -56,14 +41,7 @@ export function getReviewResolutionStore(
   return new ReviewResolutionStore(dir);
 }
 
-export function hashThreadBody(body: string): string {
-  return createHash("sha256").update(body).digest("hex").slice(0, 16);
-}
-
-export async function getThreadSnapshots(
-  scm: ReviewIntegritySCM,
-  pr: PRInfo,
-): Promise<ReviewThreadSnapshot[]> {
+export async function getThreadSnapshots(scm: SCM, pr: PRInfo): Promise<ReviewThreadSnapshot[]> {
   if (scm.getReviewThreadSnapshots) {
     return scm.getReviewThreadSnapshots(pr);
   }
@@ -164,7 +142,7 @@ export async function validateResolutionWithGit(
 }
 
 export async function evaluateMergeGuardForPR(input: {
-  scm: ReviewIntegritySCM;
+  scm: SCM;
   pr: PRInfo;
   recordsByThread: Map<string, ResolutionRecord>;
   requiredChecks?: string[];
@@ -174,6 +152,10 @@ export async function evaluateMergeGuardForPR(input: {
   integrity: ReturnType<typeof evaluateReviewIntegrity>;
   guard: MergeGuardEvaluation;
 }> {
+  const requiredChecks = [
+    ...(input.requiredChecks ?? REVIEW_INTEGRITY_DEFAULTS.requiredChecks),
+  ].filter((name) => name !== "ao/merge-guard");
+
   if (!input.scm.getReviewThreadSnapshots) {
     const checks = await input.scm.getCIChecks(input.pr);
     const checkConclusions = buildCheckConclusions(checks);
@@ -192,8 +174,8 @@ export async function evaluateMergeGuardForPR(input: {
     checkConclusions.set("review-integrity", "failed");
     const guard = evaluateMergeGuard({
       integrity,
-      requiredChecks: [...(input.requiredChecks ?? REVIEW_INTEGRITY_DEFAULTS.requiredChecks)],
-      checkConclusions: new Map([...checkConclusions, ["ao/merge-guard", "failed"]]),
+      requiredChecks,
+      checkConclusions,
     });
 
     return { integrity, guard };
@@ -217,18 +199,15 @@ export async function evaluateMergeGuardForPR(input: {
 
   const guard = evaluateMergeGuard({
     integrity,
-    requiredChecks: [...(input.requiredChecks ?? REVIEW_INTEGRITY_DEFAULTS.requiredChecks)],
-    checkConclusions: new Map([
-      ...checkConclusions,
-      ["ao/merge-guard", integrity.status === "pass" ? "passed" : "failed"],
-    ]),
+    requiredChecks,
+    checkConclusions,
   });
 
   return { integrity, guard };
 }
 
 export async function publishGuardChecks(
-  scm: ReviewIntegritySCM,
+  scm: SCM,
   pr: PRInfo,
   integrity: ReturnType<typeof evaluateReviewIntegrity>,
   guard: MergeGuardEvaluation,

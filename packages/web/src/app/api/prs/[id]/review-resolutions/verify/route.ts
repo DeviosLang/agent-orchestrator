@@ -1,3 +1,4 @@
+import type { SCM } from "@composio/ao-core";
 import { type NextRequest } from "next/server";
 import { getSCM, getServices } from "@/lib/services";
 import { getCorrelationId, jsonWithCorrelation } from "@/lib/observability";
@@ -5,7 +6,6 @@ import {
   REVIEW_INTEGRITY_DEFAULTS,
   getReviewResolutionStore,
   getThreadSnapshots,
-  type ReviewIntegritySCM,
   validateResolutionWithGit,
 } from "@/lib/review-integrity";
 
@@ -36,7 +36,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
   }
 
   const project = config.projects[session.projectId];
-  const scm = getSCM(registry, project) as ReviewIntegritySCM | null;
+  const scm = getSCM(registry, project) as SCM | null;
   if (!scm) {
     return jsonWithCorrelation(
       { error: "No SCM plugin configured for this project" },

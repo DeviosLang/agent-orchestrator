@@ -1,3 +1,4 @@
+import type { SCM } from "@composio/ao-core";
 import { type NextRequest } from "next/server";
 import { getServices, getSCM } from "@/lib/services";
 import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "@/lib/observability";
@@ -6,7 +7,6 @@ import {
   evaluateMergeGuardForPR,
   getReviewResolutionStore,
   publishGuardChecks,
-  type ReviewIntegritySCM,
 } from "@/lib/review-integrity";
 
 /** POST /api/prs/:id/merge — Merge a PR */
@@ -29,7 +29,7 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
     }
 
     const project = config.projects[session.projectId];
-    const scm = getSCM(registry, project) as ReviewIntegritySCM | null;
+    const scm = getSCM(registry, project) as SCM | null;
     if (!scm) {
       return jsonWithCorrelation(
         { error: "No SCM plugin configured for this project" },
