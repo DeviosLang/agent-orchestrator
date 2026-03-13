@@ -20,6 +20,8 @@
 // =============================================================================
 
 /** Unique session identifier, e.g. "my-app-1", "backend-12" */
+import type { ReviewThreadSnapshot } from "./review-integrity.js";
+
 export type SessionId = string;
 
 /** Session lifecycle states */
@@ -585,7 +587,7 @@ export interface SCM {
   /** Get pending (unresolved) review comments */
   getPendingComments(pr: PRInfo): Promise<ReviewComment[]>;
 
-  getReviewThreadSnapshots?(pr: PRInfo): Promise<SCMReviewThreadSnapshot[]>;
+  getReviewThreadSnapshots?(pr: PRInfo): Promise<ReviewThreadSnapshot[]>;
 
   getPRHeadSha?(pr: PRInfo): Promise<string>;
 
@@ -714,17 +716,6 @@ export interface AutomatedComment {
   severity: "error" | "warning" | "info";
   createdAt: Date;
   url: string;
-}
-
-export interface SCMReviewThreadSnapshot {
-  prNumber: number;
-  threadId: string;
-  source: "human" | "bugbot" | "other";
-  path?: string;
-  bodyHash: string;
-  severity: "high" | "medium" | "low" | "unknown";
-  status: "open" | "resolved";
-  capturedAt: Date;
 }
 
 export interface SCMCheckRunInput {
