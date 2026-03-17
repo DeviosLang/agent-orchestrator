@@ -25,6 +25,15 @@ import { createObserverContext, inferProjectId } from "./terminal-observability.
 // prebuilt binaries (e.g., linux-arm64 without build tools)
 let ptySpawn: unknown = null;
 
+// Interface for PTY instance returned by node-pty.spawn
+interface IPty {
+  onData(data: string): void;
+  onExit(callback: (event: { exitCode: number; signal?: number }) => void): void;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+}
+
 try {
   const pty = await import("node-pty");
   ptySpawn = pty.spawn;
@@ -49,7 +58,7 @@ try {
 
 interface TerminalSession {
   sessionId: string;
-  pty: unknown;
+  pty: IPty;
   ws: WebSocket;
 }
 
@@ -211,27 +220,21 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       TMPDIR: process.env.TMPDIR || "/tmp",
     } as unknown as NodeJS.ProcessEnv;
 
-    let pty: unknown;
+    let pty: IPty;
     try {
       console.log(`[DirectTerminal] Spawning PTY: tmux attach-session -t ${tmuxSessionId}`);
 
-      pty = (ptySpawn as (
-        file: string,
-        args: readonly string[],
-        options: {
-          name?: string;
-          cols?: number;
-          rows?: number;
-          cwd?: string;
-          env?: NodeJS.ProcessEnv;
+      pty = (ptySpawn as unknown)(
+        TMUX,
+        ["attach-session", "-t", tmuxSessionId],
+        {
+          name: "xterm-256color",
+          cols: 80,
+          rows: 24,
+          cwd: homeDir,
+          env,
         },
-      ) => unknown)(TMUX, ["attach-session", "-t", tmuxSessionId], {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd: homeDir,
-        env,
-      });
+      ) as IPty;
 
       console.log(`[DirectTerminal] PTY spawned successfully`);
     } catch (err) {
@@ -281,14 +284,14 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
     };
 
     // PTY -> WebSocket
-    (pty as { onData: (data: string) => void }).onData((data: string) => {
+    pty.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(data);
       }
     });
 
     // PTY exit
-    (pty as { onExit: (event: { exitCode: number }) => void }).onExit(({ exitCode }) => {
+    pty.onExit(({ exitCode }) => {
       console.log(`[DirectTerminal] PTY exited for ${sessionId} with code ${exitCode}`);
       // Guard against stale exits: only delete if this pty is still the active one.
       // A new connection may have already replaced this session entry.
@@ -310,7 +313,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
         try {
           const parsed = JSON.parse(message) as { type?: string; cols?: number; rows?: number };
           if (parsed.type === "resize" && parsed.cols && parsed.rows) {
-            (pty as { resize: (cols: number, rows: number) => void }).resize(parsed.cols, parsed.rows);
+            pty.resize(parsed.cols, parsed.rows);
             return;
           }
         } catch {
@@ -319,7 +322,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       }
 
       // Normal terminal input
-      (pty as { write: (data: string) => void }).write(message);
+      pty.write(message);
     });
 
     // WebSocket close
@@ -330,7 +333,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
         activeSessions.delete(sessionId);
       }
       recordDisconnect("success", "ws_close");
-      (pty as { kill: () => void }).kill();
+      pty.kill();
     });
 
     // WebSocket error
@@ -350,13 +353,13 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
         sessionId,
         reason: err.message,
       });
-      (pty as { kill: () => void }).kill();
+      pty.kill();
     });
   });
 
   function shutdown() {
     for (const [, session] of activeSessions) {
-      (session.pty as { kill: () => void }).kill();
+      session.pty.kill();
       session.ws.close(1001, "Server shutting down");
     }
     server.close();
