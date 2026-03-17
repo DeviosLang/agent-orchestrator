@@ -34,6 +34,19 @@ interface IPty {
   kill(): void;
 }
 
+// Type for the spawn function to avoid casting at call site
+type SpawnFunction = (
+  file: string,
+  args: readonly string[],
+  options: {
+    name?: string;
+    cols?: number;
+    rows?: number;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  },
+) => IPty;
+
 try {
   const pty = await import("node-pty");
   ptySpawn = pty.spawn;
@@ -224,7 +237,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
     try {
       console.log(`[DirectTerminal] Spawning PTY: tmux attach-session -t ${tmuxSessionId}`);
 
-      pty = (ptySpawn as unknown)(
+      pty = (ptySpawn as SpawnFunction)(
         TMUX,
         ["attach-session", "-t", tmuxSessionId],
         {
@@ -234,7 +247,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
           cwd: homeDir,
           env,
         },
-      ) as IPty;
+      );
 
       console.log(`[DirectTerminal] PTY spawned successfully`);
     } catch (err) {
