@@ -231,6 +231,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       TERM: "xterm-256color",
       LANG: process.env.LANG || "en_US.UTF-8",
       TMPDIR: process.env.TMPDIR || "/tmp",
+      NODE_ENV: process.env.NODE_ENV || "production",
     } as NodeJS.ProcessEnv;
 
     let pty: IPty;
