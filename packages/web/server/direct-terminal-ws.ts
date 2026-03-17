@@ -25,6 +25,20 @@ import { createObserverContext, inferProjectId } from "./terminal-observability.
 // prebuilt binaries (e.g., linux-arm64 without build tools)
 let ptySpawn: unknown = null;
 
+// Non-null check to ensure ptySpawn is available before use
+function ensurePtySpawn(): asserts ptySpawn {
+  if (!ptySpawn) {
+    throw new Error("[DirectTerminal] ptySpawn not available - node-pty failed to load");
+  }
+  return ptySpawn;
+}
+
+// Only start the server if running as main module (not imported by tests)
+// to avoid killing test runner when node-pty fails to load
+const isMainModule =
+  process.argv[1]?.endsWith("direct-terminal-ws.ts") ||
+  process.argv[1]?.endsWith("direct-terminal-ws.js");
+
 // Interface for PTY instance returned by node-pty.spawn
 interface IPty {
   onData(callback: (data: string) => void): void;
@@ -46,10 +60,6 @@ type SpawnFunction = (
     env?: NodeJS.ProcessEnv;
   },
 ) => IPty;
-
-try {
-  const pty = await import("node-pty");
-  ptySpawn = pty.spawn;
 } catch (err) {
   console.error(
     "[DirectTerminal] Failed to load node-pty:",
@@ -98,7 +108,10 @@ export interface DirectTerminalServer {
  * Create the direct terminal WebSocket server.
  * Separated from listen() so tests can control lifecycle.
  */
-export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalServer {
+export function createDirectTerminalServer(
+  tmuxPath?: string,
+  ptySpawnFn: SpawnFunction,
+): DirectTerminalServer {
   const TMUX = tmuxPath ?? findTmux();
   const activeSessions = new Map<string, TerminalSession>();
   const { config, observer } = createObserverContext("terminal-direct-websocket");
@@ -110,8 +123,8 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
     lastConnectedAt: null,
     lastDisconnectedAt: null,
     lastErrorAt: null,
-    lastDisconnectReason: null,
     lastErrorReason: null,
+    lastDisconnectReason: null,
   };
 
   const server = createServer((req, res) => {
@@ -231,7 +244,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       TERM: "xterm-256color",
       LANG: process.env.LANG || "en_US.UTF-8",
       TMPDIR: process.env.TMPDIR || "/tmp",
-    } as unknown as NodeJS.ProcessEnv;
+    } satisfies NodeJS.ProcessEnv;
 
     let pty: IPty;
     try {
@@ -366,7 +379,9 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
         sessionId,
         reason: err.message,
       });
-      pty.kill();
+      if (pty) {
+        pty.kill();
+      }
     });
   });
 
@@ -391,7 +406,7 @@ if (isMainModule) {
   const TMUX = findTmux();
   console.log(`[DirectTerminal] Using tmux: ${TMUX}`);
 
-  const { server, shutdown } = createDirectTerminalServer(TMUX);
+  const { server, shutdown } = createDirectTerminalServer(ensurePtySpawn());
   const PORT = parseInt(process.env.DIRECT_TERMINAL_PORT ?? "14801", 10);
 
   server.listen(PORT, () => {
