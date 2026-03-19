@@ -418,6 +418,67 @@ describe("runtime.sendMessage()", () => {
       expectedTmuxOptions,
     );
   });
+
+  it("retries Enter for >1KB messages when output unchanged", async () => {
+    const runtime = create();
+    const handle = makeHandle("msg-retry");
+    const largeText = "x".repeat(1500); // >1KB
+
+    // C-u, load-buffer, paste-buffer, delete-buffer, then retry sequence
+    mockTmuxSuccess(); // C-u
+    mockTmuxSuccess(); // load-buffer
+    mockTmuxSuccess(); // paste-buffer
+    mockTmuxSuccess(); // delete-buffer (finally)
+    // First attempt - output unchanged
+    mockTmuxSuccess("same output\n"); // capture-pane before
+    mockTmuxSuccess(); // send-keys Enter
+    mockTmuxSuccess("same output\n"); // capture-pane after - unchanged
+    // Second attempt - output changed
+    mockTmuxSuccess("same output\n"); // capture-pane before
+    mockTmuxSuccess(); // send-keys Enter
+    mockTmuxSuccess("different output\n"); // capture-pane after - changed, done
+
+    await runtime.sendMessage(handle, largeText);
+
+    // Verify capture-pane was called for retry detection
+    const captureCalls = mockExecFileCustom.mock.calls.filter(
+      (call) => call[1]?.[0] === "capture-pane",
+    );
+    // 2 attempts × (before + after) = 4 capture-pane calls
+    expect(captureCalls.length).toBe(4);
+
+    // Verify Enter was sent 2 times (2 attempts)
+    const enterCalls = mockExecFileCustom.mock.calls.filter(
+      (call) => call[1]?.[0] === "send-keys" && call[1]?.includes("Enter"),
+    );
+    expect(enterCalls.length).toBe(2);
+  });
+
+  it("does not retry Enter for <=1KB messages", async () => {
+    const runtime = create();
+    const handle = makeHandle("msg-no-retry");
+    const smallText = "x".repeat(500); // <1KB
+
+    mockTmuxSuccess(); // C-u
+    mockTmuxSuccess(); // load-buffer (triggered by >200 chars)
+    mockTmuxSuccess(); // paste-buffer
+    mockTmuxSuccess(); // delete-buffer
+    mockTmuxSuccess(); // Enter (no capture-pane, no retry)
+
+    await runtime.sendMessage(handle, smallText);
+
+    // No capture-pane calls for small messages
+    const captureCalls = mockExecFileCustom.mock.calls.filter(
+      (call) => call[1]?.[0] === "capture-pane",
+    );
+    expect(captureCalls.length).toBe(0);
+
+    // Only 1 Enter sent
+    const enterCalls = mockExecFileCustom.mock.calls.filter(
+      (call) => call[1]?.[0] === "send-keys" && call[1]?.includes("Enter"),
+    );
+    expect(enterCalls.length).toBe(1);
+  });
 });
 
 describe("runtime.getOutput()", () => {

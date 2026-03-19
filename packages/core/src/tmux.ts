@@ -121,7 +121,7 @@ export async function newSession(opts: NewSessionOptions): Promise<void> {
  * For long/multiline messages, uses load-buffer + paste-buffer with
  * a named buffer to avoid racing on the global paste buffer.
  * Sends Escape first to clear any partial input in the agent.
- * 
+ *
  * Implements adaptive delay and Enter retry logic for issue #373:
  * - Scales delay with message length (base + 200ms per KB)
  * - Retries Enter for large messages if output doesn't change

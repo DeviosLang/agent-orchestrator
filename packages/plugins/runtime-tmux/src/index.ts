@@ -146,36 +146,39 @@ export function create(): Runtime {
 
       // Adaptive delay based on message length to ensure paste is fully processed
       // before sending Enter. Large messages (4KB+) need more time.
-      // Base delay: 300ms + additional time proportional to message length
-      const baseDelay = 300;
-      const lengthFactor = Math.floor(message.length / 1000) * 200; // +200ms per KB
-      const adaptiveDelay = Math.min(baseDelay + lengthFactor, 2000); // Cap at 2s
-      
+      // Base delay: 1000ms for paste-buffer, 100ms for direct send-keys
+      // Additional time: 200ms per KB of message content
+      // Cap at 2000ms max delay
+      const isLongMessage = message.includes("\n") || message.length > 200;
+      const baseDelay = isLongMessage ? 1000 : 100;
+      const lengthFactor = Math.floor(message.length / 1000) * 200;
+      const adaptiveDelay = Math.min(baseDelay + lengthFactor, 2000);
+
       await sleep(adaptiveDelay);
-      
-      // Send Enter with retry logic for large messages
+
+      // Enter retry logic for large messages (issue #373)
       // After sending Enter, verify the agent started processing by checking
       // if the output changed. If not, retry Enter up to 3 times.
-      const maxRetries = message.length > 1000 ? 3 : 1;
-      
+      const needsRetry = message.length > 1000;
+      const maxRetries = needsRetry ? 3 : 1;
+
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         // For large messages, capture current output before Enter to detect if retry is needed
         let beforeOutput = "";
-        if (message.length > 1000) {
+        if (needsRetry) {
           try {
             beforeOutput = await tmux("capture-pane", "-t", handle.id, "-p", "-S", "-50");
           } catch {
             // Ignore capture errors
           }
         }
-        
+
         await tmux("send-keys", "-t", handle.id, "Enter");
-        
+
         // For large messages, verify the agent started processing
-        if (message.length > 1000) {
-          // Wait a moment for the agent to process
+        if (needsRetry) {
           await sleep(500);
-          
+
           try {
             const afterOutput = await tmux("capture-pane", "-t", handle.id, "-p", "-S", "-50");
             if (afterOutput !== beforeOutput) {
