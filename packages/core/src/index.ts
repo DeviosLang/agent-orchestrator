@@ -42,6 +42,7 @@ export {
   killSession as killTmuxSession,
   getPaneTTY as getTmuxPaneTTY,
 } from "./tmux.js";
+export { sendTmuxEnterWithRetry } from "./tmux-enter-retry.js";
 
 // Session manager — session CRUD
 export { createSessionManager } from "./session-manager.js";

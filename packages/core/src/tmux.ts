@@ -5,6 +5,7 @@
  */
 
 import { execFile } from "node:child_process";
+import { sendTmuxEnterWithRetry } from "./tmux-enter-retry.js";
 
 /** Run a tmux command and return stdout. */
 function tmux(...args: string[]): Promise<string> {
@@ -166,56 +167,15 @@ export async function sendKeys(
   }
 
   if (pressEnter) {
-    // Adaptive delay based on message length to ensure paste is fully processed
-    // before sending Enter. Large messages (4KB+) need more time.
-    // Base delay: 1000ms for paste-buffer, 100ms for direct send-keys
-    // Additional time: 200ms per KB of message content
-    // Cap at 2000ms max delay
     const baseDelay = isLongMessage ? 1000 : 100;
-    const lengthFactor = Math.floor(text.length / 1000) * 200;
-    const adaptiveDelay = Math.min(baseDelay + lengthFactor, 2000);
-    
-    await new Promise((resolve) => setTimeout(resolve, adaptiveDelay));
-    
-    // Enter retry logic for large messages (issue #373)
-    // After sending Enter, verify the agent started processing by checking
-    // if the output changed. If not, retry Enter up to 3 times.
-    const needsRetry = text.length > 1000;
-    const maxRetries = needsRetry ? 3 : 1;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      // Capture current output before Enter (for retry detection)
-      let beforeOutput = "";
-      if (needsRetry) {
-        try {
-          beforeOutput = await tmux("capture-pane", "-t", sessionName, "-p", "-S", "-50");
-        } catch {
-          // Ignore capture errors
-        }
-      }
-      
-      await tmux("send-keys", "-t", sessionName, "Enter");
-      
-      // For large messages, verify the agent started processing
-      if (needsRetry) {
-        // Wait a moment for the agent to process
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        
-        try {
-          const afterOutput = await tmux("capture-pane", "-t", sessionName, "-p", "-S", "-50");
-          if (afterOutput !== beforeOutput) {
-            // Output changed, agent is processing - done
-            break;
-          }
-          // Output didn't change, Enter might have been swallowed - retry
-          // Increase delay for next attempt
-          await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
-        } catch {
-          // Ignore capture errors, assume success
-          break;
-        }
-      }
-    }
+    await sendTmuxEnterWithRetry({
+      messageLength: text.length,
+      baseDelayMs: baseDelay,
+      sendEnter: async () => {
+        await tmux("send-keys", "-t", sessionName, "Enter");
+      },
+      captureOutput: async () => tmux("capture-pane", "-t", sessionName, "-p", "-S", "-50"),
+    });
   }
 }
 
