@@ -53,9 +53,6 @@ export function useTerminalResize({
 
     if (!fitAddon || !terminal || !container) return;
 
-    const ws = getWebSocket();
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
     let resizeAttempts = 0;
     const maxAttempts = 60;
     let cancelled = false;
