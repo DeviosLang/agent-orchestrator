@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type DashboardSession,
   type DashboardStats,
@@ -68,25 +68,15 @@ export function Dashboard({
   const isMobile = useIsMobile();
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage("ao-sidebar-collapsed", false);
   const [sidebarWidth, setSidebarWidth] = useLocalStorage("ao-sidebar-width", 180);
-  const desktopPrefRef = useRef<boolean | null>(null);
+  const [mobileForceCollapsed, setMobileForceCollapsed] = useState(false);
   useEffect(() => {
     if (isMobile) {
-      if (desktopPrefRef.current === null) {
-        // Read directly from localStorage to get the true desktop preference,
-        // since the state value may not have synced from localStorage yet.
-        try {
-          const stored = localStorage.getItem("ao-sidebar-collapsed");
-          desktopPrefRef.current = stored !== null ? (JSON.parse(stored) as boolean) : false;
-        } catch {
-          desktopPrefRef.current = false;
-        }
-      }
-      setSidebarCollapsed(true);
-    } else if (desktopPrefRef.current !== null) {
-      setSidebarCollapsed(desktopPrefRef.current);
-      desktopPrefRef.current = null;
+      setMobileForceCollapsed(true);
+    } else {
+      setMobileForceCollapsed(false);
     }
-  }, [isMobile, setSidebarCollapsed]);
+  }, [isMobile]);
+  const effectiveSidebarCollapsed = isMobile ? mobileForceCollapsed : sidebarCollapsed;
   const { sessions, globalPause } = useSessionEvents(initialSessions, initialGlobalPause, projectId);
   const [rateLimitDismissed, setRateLimitDismissed] = useState(false);
   const [dismissedPauseKey, setDismissedPauseKey] = useState<string | null>(null);
@@ -172,29 +162,27 @@ export function Dashboard({
 
   return (
     <div className="flex h-screen">
-      {!sidebarCollapsed && (
-        <div className="hidden md:block">
-          <ProjectSidebar
-            projects={projects}
-            activeProjectId={projectId}
-            orchestrators={activeOrchestrators}
-            collapsed={sidebarCollapsed}
-            onCollapsedChange={setSidebarCollapsed}
-            width={sidebarWidth}
-            onWidthChange={setSidebarWidth}
-          />
-        </div>
+      {!isMobile && !effectiveSidebarCollapsed && (
+        <ProjectSidebar
+          projects={projects}
+          activeProjectId={projectId}
+          orchestrators={activeOrchestrators}
+          collapsed={sidebarCollapsed}
+          onCollapsedChange={setSidebarCollapsed}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
+        />
       )}
-      {isMobile && !sidebarCollapsed && (
+      {isMobile && !mobileForceCollapsed && (
         <>
-          <div className="fixed inset-0 z-30 bg-black/50" onClick={() => setSidebarCollapsed(true)} />
+          <div className="fixed inset-0 z-30 bg-black/50" onClick={() => setMobileForceCollapsed(true)} />
           <div className="fixed inset-y-0 left-0 z-40">
             <ProjectSidebar
               projects={projects}
               activeProjectId={projectId}
               orchestrators={activeOrchestrators}
-              collapsed={sidebarCollapsed}
-              onCollapsedChange={setSidebarCollapsed}
+              collapsed={false}
+              onCollapsedChange={() => setMobileForceCollapsed(true)}
               width={260}
               onWidthChange={setSidebarWidth}
             />
@@ -205,9 +193,9 @@ export function Dashboard({
         <DynamicFavicon sessions={sessions} projectName={projectName} />
         <div className="flex items-center gap-3 border-b border-[var(--color-border-subtle)] px-4 py-3 md:justify-between md:gap-6 md:px-8">
           <div className="flex flex-wrap items-center gap-3 md:gap-6">
-            {sidebarCollapsed && (
+            {effectiveSidebarCollapsed && (
               <button
-                onClick={() => setSidebarCollapsed(false)}
+                onClick={() => isMobile ? setMobileForceCollapsed(false) : setSidebarCollapsed(false)}
                 aria-label="Expand sidebar"
                 className="flex h-7 w-7 items-center justify-center rounded border border-[var(--color-border-subtle)] text-[var(--color-text-tertiary)] transition-colors hover:bg-[rgba(255,255,255,0.06)] hover:text-[var(--color-text-primary)]"
               >
