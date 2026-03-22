@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import type { ProjectInfo } from "@/lib/project-name";
 import type { DashboardOrchestratorLink } from "@/lib/types";
-import { SpawnOrchestratorButton } from "./SpawnOrchestratorButton";
 
 const SIDEBAR_MIN_WIDTH = 160;
 const SIDEBAR_MAX_WIDTH = 320;
@@ -14,8 +13,6 @@ interface ProjectSidebarProps {
   projects: ProjectInfo[];
   activeProjectId: string | undefined;
   orchestrators?: DashboardOrchestratorLink[];
-  onSpawnOrchestrator?: (project: ProjectInfo) => Promise<void>;
-  spawningProjectIds?: string[];
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   width: number;
@@ -26,8 +23,6 @@ export function ProjectSidebar({
   projects,
   activeProjectId,
   orchestrators = [],
-  onSpawnOrchestrator,
-  spawningProjectIds = [],
   collapsed,
   onCollapsedChange,
   width,
@@ -159,7 +154,6 @@ export function ProjectSidebar({
         )}
         {projects.map((project) => {
           const orch = getOrchestrator(project.id);
-          const isSpawning = spawningProjectIds.includes(project.id);
           return (
             <div key={project.id} className="group flex items-center px-1">
               <button
@@ -173,15 +167,7 @@ export function ProjectSidebar({
               >
                 {project.name}
               </button>
-              {onSpawnOrchestrator ? (
-                <SpawnOrchestratorButton
-                  project={project}
-                  orchestrator={orch}
-                  onSpawnOrchestrator={onSpawnOrchestrator}
-                  isSpawning={isSpawning}
-                  variant="sidebar"
-                />
-              ) : orch ? (
+              {orch && (
                 <a
                   href={`/sessions/${encodeURIComponent(orch.id)}`}
                   title="Orchestrator running"
@@ -189,7 +175,7 @@ export function ProjectSidebar({
                 >
                   <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] opacity-80" />
                 </a>
-              ) : null}
+              )}
             </div>
           );
         })}

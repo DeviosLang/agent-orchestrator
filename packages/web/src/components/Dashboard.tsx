@@ -37,14 +37,14 @@ interface DashboardProps {
   orchestrators?: DashboardOrchestratorLink[];
 }
 
-const KANBAN_LEVELS = ["working", "pending", "review", "respond", "merge", "done"] as const;
+const KANBAN_LEVELS = ["working", "pending", "review", "respond", "merge"] as const;
 const KANBAN_LABELS: Record<string, string> = {
-  working: "Working", pending: "Pending", review: "Review", respond: "Respond", merge: "Merge", done: "Done",
+  working: "Working", pending: "Pending", review: "Review", respond: "Respond", merge: "Merge",
 };
 const KANBAN_LABEL_COLORS: Record<string, string> = {
   working: "var(--color-status-working)", pending: "var(--color-status-attention)",
   review: "var(--color-accent-orange)", respond: "var(--color-status-error)",
-  merge: "var(--color-status-ready)", done: "var(--color-text-tertiary)",
+  merge: "var(--color-status-ready)",
 };
 const EMPTY_ORCHESTRATORS: DashboardOrchestratorLink[] = [];
 
@@ -178,8 +178,6 @@ export function Dashboard({
             projects={projects}
             activeProjectId={projectId}
             orchestrators={activeOrchestrators}
-            onSpawnOrchestrator={handleSpawnOrchestrator}
-            spawningProjectIds={spawningProjectIds}
             collapsed={sidebarCollapsed}
             onCollapsedChange={setSidebarCollapsed}
             width={sidebarWidth}
@@ -195,8 +193,6 @@ export function Dashboard({
               projects={projects}
               activeProjectId={projectId}
               orchestrators={activeOrchestrators}
-              onSpawnOrchestrator={handleSpawnOrchestrator}
-              spawningProjectIds={spawningProjectIds}
               collapsed={sidebarCollapsed}
               onCollapsedChange={setSidebarCollapsed}
               width={260}
@@ -272,6 +268,11 @@ export function Dashboard({
                 <SpawnOrchestratorButton project={selectedProject} orchestrator={null} onSpawnOrchestrator={handleSpawnOrchestrator} isSpawning={spawningProjectIds.includes(selectedProject.id)} error={spawnErrors[selectedProject.id]} variant="default" />
               ) : undefined}
             />
+          </div>
+        )}
+        {!allProjectsView && grouped.done.length > 0 && (
+          <div className="mb-8">
+            <AttentionZone level="done" sessions={grouped.done} variant="grid" onSend={handleSend} onKill={handleKill} onMerge={handleMerge} onRestore={handleRestore} />
           </div>
         )}
         <PRTable openPRs={openPRs} />
