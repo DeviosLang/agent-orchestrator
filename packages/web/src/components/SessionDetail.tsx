@@ -26,8 +26,6 @@ export function SessionDetail({
     color: "var(--color-text-muted)",
   };
 
-  const accentColor = "var(--color-accent)";
-
   const backHref = session.projectId
     ? `/projects/${encodeURIComponent(session.projectId)}`
     : "/";
@@ -70,9 +68,9 @@ export function SessionDetail({
             <span
               className="ml-1 rounded px-2 py-0.5 text-[10px] font-semibold tracking-[0.05em]"
               style={{
-                color: accentColor,
-                background: `color-mix(in srgb, ${accentColor} 10%, transparent)`,
-                border: `1px solid color-mix(in srgb, ${accentColor} 20%, transparent)`,
+                color: "var(--color-accent)",
+                background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)",
               }}
             >
               orchestrator

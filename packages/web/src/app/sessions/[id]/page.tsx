@@ -114,7 +114,10 @@ export default function SessionPage() {
 
   // Real-time updates via SSE — falls back to refetch on membership change
   useEffect(() => {
-    const es = new EventSource("/api/events");
+    const eventUrl = sessionProjectId
+      ? `/api/events?project=${encodeURIComponent(sessionProjectId)}`
+      : "/api/events";
+    const es = new EventSource(eventUrl);
     es.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string) as { type: string; sessions?: Array<{ id: string; status: string; activity: string | null; lastActivityAt: string }> };
@@ -134,7 +137,7 @@ export default function SessionPage() {
     // Full refetch every 15s as fallback for enriched data (PR state, etc.)
     const fallback = setInterval(() => { fetchSession(); fetchZoneCounts(); }, 15_000);
     return () => { es.close(); clearInterval(fallback); };
-  }, [id, fetchSession, fetchZoneCounts]);
+  }, [id, sessionProjectId, fetchSession, fetchZoneCounts]);
 
   if (loading) {
     return (
