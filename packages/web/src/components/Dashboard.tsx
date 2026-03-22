@@ -20,12 +20,11 @@ import { useDashboardActions } from "@/hooks/useDashboardActions";
 import { ProjectSidebar } from "./ProjectSidebar";
 import type { ProjectInfo } from "@/lib/project-name";
 import { StatusLine } from "./StatusLine";
-import { ProjectOrchestratorControl } from "./ProjectOrchestratorControl";
+import { SpawnOrchestratorButton } from "./SpawnOrchestratorButton";
 import { ProjectOverviewGrid } from "./ProjectOverviewGrid";
 import { GlobalPauseBanner } from "./GlobalPauseBanner";
 import { RateLimitBanner } from "./RateLimitBanner";
 import { EmptyState } from "./EmptyState";
-import { SpawnOrchestratorButton } from "./SpawnOrchestratorButton";
 import { PRTable } from "./PRTable";
 import { useIsMobile } from "@/hooks/useMediaQuery";
 
@@ -61,15 +60,18 @@ export function Dashboard({
   const isMobile = useIsMobile();
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage("ao-sidebar-collapsed", false);
   const [sidebarWidth, setSidebarWidth] = useLocalStorage("ao-sidebar-width", 180);
-  const hasAutoCollapsed = useRef(false);
+  const desktopPrefRef = useRef<boolean | null>(null);
   useEffect(() => {
-    if (isMobile && !hasAutoCollapsed.current) {
+    if (isMobile) {
+      if (desktopPrefRef.current === null) {
+        desktopPrefRef.current = sidebarCollapsed;
+      }
       setSidebarCollapsed(true);
-      hasAutoCollapsed.current = true;
-    } else if (!isMobile) {
-      hasAutoCollapsed.current = false;
+    } else if (desktopPrefRef.current !== null) {
+      setSidebarCollapsed(desktopPrefRef.current);
+      desktopPrefRef.current = null;
     }
-  }, [isMobile, setSidebarCollapsed]);
+  }, [isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
   const { sessions, globalPause } = useSessionEvents(initialSessions, initialGlobalPause, projectId);
   const [rateLimitDismissed, setRateLimitDismissed] = useState(false);
   const [globalPauseDismissed, setGlobalPauseDismissed] = useState(false);
@@ -208,7 +210,7 @@ export function Dashboard({
             <span className="hidden md:inline-flex"><StatusLine stats={liveStats} /></span>
           </div>
           {!allProjectsView && selectedProject && (
-            <ProjectOrchestratorControl
+            <SpawnOrchestratorButton
               project={selectedProject}
               orchestrator={selectedProjectOrchestrator}
               onSpawnOrchestrator={handleSpawnOrchestrator}

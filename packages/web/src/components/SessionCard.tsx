@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import {
   type DashboardSession,
   type AttentionLevel,
@@ -33,7 +33,7 @@ const borderColorByLevel: Record<AttentionLevel, string> = {
   done:    "border-l-[var(--color-border-default)]",
 };
 
-export function SessionCard({ session, onSend, onKill, onMerge, onRestore }: SessionCardProps) {
+function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: SessionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [sendingAction, setSendingAction] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -377,3 +377,15 @@ function getAlerts(session: DashboardSession): Alert[] {
 
   return alerts;
 }
+
+function areSessionCardPropsEqual(prev: SessionCardProps, next: SessionCardProps): boolean {
+  return (
+    prev.session === next.session &&
+    prev.onSend === next.onSend &&
+    prev.onKill === next.onKill &&
+    prev.onMerge === next.onMerge &&
+    prev.onRestore === next.onRestore
+  );
+}
+
+export const SessionCard = memo(SessionCardView, areSessionCardPropsEqual);

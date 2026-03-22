@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { DashboardOrchestratorLink } from "@/lib/types";
 import type { ProjectInfo } from "@/lib/project-name";
 
@@ -10,7 +10,7 @@ export function useDashboardActions(
   const [spawningProjectIds, setSpawningProjectIds] = useState<string[]>([]);
   const [spawnErrors, setSpawnErrors] = useState<Record<string, string>>({});
 
-  const handleSend = async (sessionId: string, message: string) => {
+  const handleSend = useCallback(async (sessionId: string, message: string) => {
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -19,9 +19,9 @@ export function useDashboardActions(
     if (!res.ok) {
       console.error(`Failed to send message to ${sessionId}:`, await res.text());
     }
-  };
+  }, []);
 
-  const handleKill = async (sessionId: string) => {
+  const handleKill = useCallback(async (sessionId: string) => {
     if (!confirm(`Kill session ${sessionId}?`)) return;
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/kill`, {
       method: "POST",
@@ -29,16 +29,16 @@ export function useDashboardActions(
     if (!res.ok) {
       console.error(`Failed to kill ${sessionId}:`, await res.text());
     }
-  };
+  }, []);
 
-  const handleMerge = async (prNumber: number) => {
+  const handleMerge = useCallback(async (prNumber: number) => {
     const res = await fetch(`/api/prs/${prNumber}/merge`, { method: "POST" });
     if (!res.ok) {
       console.error(`Failed to merge PR #${prNumber}:`, await res.text());
     }
-  };
+  }, []);
 
-  const handleRestore = async (sessionId: string) => {
+  const handleRestore = useCallback(async (sessionId: string) => {
     if (!confirm(`Restore session ${sessionId}?`)) return;
     const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/restore`, {
       method: "POST",
@@ -46,9 +46,9 @@ export function useDashboardActions(
     if (!res.ok) {
       console.error(`Failed to restore ${sessionId}:`, await res.text());
     }
-  };
+  }, []);
 
-  const handleSpawnOrchestrator = async (project: ProjectInfo) => {
+  const handleSpawnOrchestrator = useCallback(async (project: ProjectInfo) => {
     setSpawningProjectIds((current) =>
       current.includes(project.id) ? current : [...current, project.id],
     );
@@ -84,7 +84,7 @@ export function useDashboardActions(
     } finally {
       setSpawningProjectIds((current) => current.filter((id) => id !== project.id));
     }
-  };
+  }, [setActiveOrchestrators]);
 
   return {
     spawningProjectIds,
