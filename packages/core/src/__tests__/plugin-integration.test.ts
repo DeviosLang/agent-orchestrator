@@ -69,7 +69,7 @@ function makeHandle(id: string): RuntimeHandle {
 }
 
 function mockGh(result: unknown): void {
-  ghMock.mockResolvedValue({ stdout: JSON.stringify(result) });
+  ghMock.mockResolvedValueOnce({ stdout: JSON.stringify(result) });
 }
 
 const pr: PRInfo = {
@@ -478,11 +478,6 @@ describe("plugin integration", () => {
       sm = createSessionManager({ config, registry });
       // Clear gh mock to ensure fresh mocks for each test
       ghMock.mockReset();
-      // Clear gh cache to ensure fresh state for each test
-      const scm = registry.get("github");
-      if (scm && "__clearGhCacheForTesting__" in scm) {
-        (scm as any).__clearGhCacheForTesting__();
-      }
     });
 
     function seedSession(overrides: Partial<Session> = {}): Session {
@@ -527,12 +522,6 @@ describe("plugin integration", () => {
       // 2. getCISummary → failing (pr checks returns array of checks with correct field names)
       mockGh([{ name: "lint", state: "FAILURE", link: "", startedAt: "", completedAt: "" }]);
 
-      // Clear cache to ensure mocks are called
-      const scm = await registry.get("github");
-      if (scm && "__clearGhCacheForTesting__" in scm) {
-        (scm as any).__clearGhCacheForTesting__();
-      }
-
       await lm.check("app-1");
 
       const states = lm.getStates();
@@ -560,12 +549,6 @@ describe("plugin integration", () => {
 
       // getPRState → merged
       mockGh({ state: "MERGED" });
-
-      // Clear cache to ensure mocks are called
-      const scm = await registry.get("github");
-      if (scm && "__clearGhCacheForTesting__" in scm) {
-        (scm as any).__clearGhCacheForTesting__();
-      }
 
       await lm.check("app-1");
 
@@ -598,12 +581,6 @@ describe("plugin integration", () => {
       mockGh([{ name: "lint", state: "SUCCESS", link: "", startedAt: "", completedAt: "" }]);
       // 3. getReviewDecision (gh pr view with reviewDecision)
       mockGh({ reviewDecision: "CHANGES_REQUESTED" });
-
-      // Clear cache to ensure mocks are called
-      const scm = await registry.get("github");
-      if (scm && "__clearGhCacheForTesting__" in scm) {
-        (scm as any).__clearGhCacheForTesting__();
-      }
 
       await lm.check("app-1");
 
