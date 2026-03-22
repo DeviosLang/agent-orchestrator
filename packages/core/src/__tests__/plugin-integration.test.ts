@@ -38,7 +38,7 @@ import { createLifecycleManager } from "../lifecycle-manager.js";
 import { writeMetadata } from "../metadata.js";
 import { getSessionsDir } from "../paths.js";
 import trackerGithub from "@composio/ao-plugin-tracker-github";
-import scmGithub from "@composio/ao-plugin-scm-github";
+import scmGithub, { __clearGhCacheForTesting__ as clearGhCache } from "@composio/ao-plugin-scm-github";
 import type {
   OrchestratorConfig,
   PluginRegistry,
@@ -108,6 +108,8 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Clear gh cache to prevent stale data from interfering with mocks
+  clearGhCache();
 
   tmpDir = join(tmpdir(), `ao-test-plugin-int-${randomUUID()}`);
   mkdirSync(tmpDir, { recursive: true });
@@ -478,6 +480,8 @@ describe("plugin integration", () => {
       sm = createSessionManager({ config, registry });
       // Clear gh mock to ensure fresh mocks for each test
       ghMock.mockReset();
+      // Clear gh cache to prevent stale data from interfering with mocks
+      clearGhCache();
     });
 
     function seedSession(overrides: Partial<Session> = {}): Session {
@@ -496,7 +500,7 @@ describe("plugin integration", () => {
       return session;
     }
 
-    it.skip("check() detects ci_failed via scm-github getCISummary()", async () => {
+    it("check() detects ci_failed via scm-github getCISummary()", async () => {
       seedSession({ status: "pr_open", pr });
 
       // Mock the sessionManager.list() to return our session
@@ -528,7 +532,7 @@ describe("plugin integration", () => {
       expect(states.get("app-1")).toBe("ci_failed");
     });
 
-    it.skip("check() detects merged via scm-github getPRState()", async () => {
+    it("check() detects merged via scm-github getPRState()", async () => {
       seedSession({ status: "pr_open", pr });
 
       const mockSM: SessionManager = {
@@ -556,7 +560,7 @@ describe("plugin integration", () => {
       expect(states.get("app-1")).toBe("merged");
     });
 
-    it.skip("check() detects changes_requested via scm-github getReviewDecision()", async () => {
+    it("check() detects changes_requested via scm-github getReviewDecision()", async () => {
       seedSession({ status: "pr_open", pr });
 
       const mockSM: SessionManager = {
