@@ -34,6 +34,7 @@ import {
   type Tracker,
   type SCM,
   type RuntimeHandle,
+  type Session,
 } from "../types.js";
 
 let tmpDir: string;
@@ -1387,6 +1388,89 @@ describe("list", () => {
     expect(sessions[0].activity).toBe("active");
   });
 
+  it.each(["claude-code", "codex", "aider", "opencode"])(
+    "uses tmuxName fallback handle for %s activity detection when runtimeHandle is missing",
+    async (agentName: string) => {
+      const expectedTmuxName = "hash-app-1";
+      const selectedAgent: Agent = {
+        ...mockAgent,
+        name: agentName,
+        getActivityState: vi.fn().mockImplementation(async (session: Session) => {
+          return {
+            state: session.runtimeHandle?.id === expectedTmuxName ? "active" : "exited",
+          };
+        }),
+      };
+      const registryWithNamedAgents: PluginRegistry = {
+        ...mockRegistry,
+        get: vi.fn().mockImplementation((slot: string, name: string) => {
+          if (slot === "runtime") return mockRuntime;
+          if (slot === "agent" && name === agentName) return selectedAgent;
+          if (slot === "workspace") return mockWorkspace;
+          return null;
+        }),
+      };
+
+      writeMetadata(sessionsDir, "app-1", {
+        worktree: "/tmp",
+        branch: "a",
+        status: "working",
+        project: "my-app",
+        agent: agentName,
+        tmuxName: expectedTmuxName,
+        ...(agentName === "opencode" ? { opencodeSessionId: "ses_existing_mapping" } : {}),
+      });
+
+      const sm = createSessionManager({ config, registry: registryWithNamedAgents });
+      const sessions = await sm.list("my-app");
+
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0].runtimeHandle?.id).toBe(expectedTmuxName);
+      expect(sessions[0].activity).toBe("active");
+      expect(selectedAgent.getActivityState).toHaveBeenCalled();
+    },
+  );
+
+  it("uses tmuxName fallback handle for runtime liveness checks when runtimeHandle is missing", async () => {
+    const expectedTmuxName = "hash-app-1";
+    const deadRuntime: Runtime = {
+      ...mockRuntime,
+      isAlive: vi
+        .fn()
+        .mockImplementation(async (handle: RuntimeHandle) => handle.id !== expectedTmuxName),
+    };
+    const agentWithSpy: Agent = {
+      ...mockAgent,
+      getActivityState: vi.fn().mockResolvedValue({ state: "active" }),
+    };
+    const registryWithDeadRuntime: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return deadRuntime;
+        if (slot === "agent") return agentWithSpy;
+        if (slot === "workspace") return mockWorkspace;
+        return null;
+      }),
+    };
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "a",
+      status: "working",
+      project: "my-app",
+      tmuxName: expectedTmuxName,
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithDeadRuntime });
+    const sessions = await sm.list("my-app");
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].runtimeHandle?.id).toBe(expectedTmuxName);
+    expect(sessions[0].status).toBe("killed");
+    expect(sessions[0].activity).toBe("exited");
+    expect(agentWithSpy.getActivityState).not.toHaveBeenCalled();
+  });
+
   it("keeps existing activity when getActivityState throws", async () => {
     const agentWithError: Agent = {
       ...mockAgent,
@@ -2203,6 +2287,101 @@ describe("cleanup", () => {
 
     expect(result.killed).toHaveLength(0);
     expect(result.skipped).toContain("app-orchestrator");
+  });
+
+  it("never cleans the canonical orchestrator session even with stale worker-like metadata", async () => {
+    const deleteLogPath = join(tmpDir, "opencode-delete-orchestrator.log");
+    const mockBin = installMockOpencode("[]", deleteLogPath);
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
+    const deadRuntime: Runtime = {
+      ...mockRuntime,
+      isAlive: vi.fn().mockResolvedValue(false),
+    };
+    const mockSCM: SCM = {
+      name: "mock-scm",
+      detectPR: vi.fn(),
+      getPRState: vi.fn().mockResolvedValue("merged"),
+      mergePR: vi.fn(),
+      closePR: vi.fn(),
+      getCIChecks: vi.fn(),
+      getCISummary: vi.fn(),
+      getReviews: vi.fn(),
+      getReviewDecision: vi.fn(),
+      getPendingComments: vi.fn(),
+      getAutomatedComments: vi.fn(),
+      getMergeability: vi.fn(),
+    };
+    const mockTracker: Tracker = {
+      name: "mock-tracker",
+      getIssue: vi.fn().mockResolvedValue({
+        id: "INT-42",
+        title: "Issue",
+        description: "",
+        url: "https://example.com/INT-42",
+        state: "closed",
+        labels: [],
+      }),
+      isCompleted: vi.fn().mockResolvedValue(true),
+      issueUrl: vi.fn().mockReturnValue("https://example.com/INT-42"),
+      branchName: vi.fn().mockReturnValue("feat/INT-42"),
+      generatePrompt: vi.fn().mockResolvedValue(""),
+    };
+    const registryWithSignals: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return deadRuntime;
+        if (slot === "agent") return mockAgent;
+        if (slot === "workspace") return mockWorkspace;
+        if (slot === "scm") return mockSCM;
+        if (slot === "tracker") return mockTracker;
+        return null;
+      }),
+    };
+
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "ci_failed",
+      project: "my-app",
+      issue: "INT-42",
+      pr: "https://github.com/org/repo/pull/10",
+      agent: "opencode",
+      opencodeSessionId: "ses_orchestrator_active",
+      runtimeHandle: JSON.stringify(makeHandle("rt-orchestrator")),
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithSignals });
+    const result = await sm.cleanup();
+
+    expect(result.killed).not.toContain("app-orchestrator");
+    expect(result.skipped).toContain("app-orchestrator");
+    expect(existsSync(deleteLogPath)).toBe(false);
+  });
+
+  it("never cleans archived orchestrator mappings even when metadata looks stale", async () => {
+    const deleteLogPath = join(tmpDir, "opencode-delete-archived-orchestrator.log");
+    const mockBin = installMockOpencode("[]", deleteLogPath);
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "killed",
+      project: "my-app",
+      agent: "opencode",
+      opencodeSessionId: "ses_orchestrator_archived",
+      pr: "https://github.com/org/repo/pull/88",
+      runtimeHandle: JSON.stringify(makeHandle("rt-orchestrator")),
+    });
+    deleteMetadata(sessionsDir, "app-orchestrator", true);
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    const result = await sm.cleanup();
+
+    expect(result.killed).not.toContain("app-orchestrator");
+    expect(result.skipped).toContain("app-orchestrator");
+    expect(existsSync(deleteLogPath)).toBe(false);
   });
 
   it("kills sessions with dead runtimes", async () => {

@@ -363,6 +363,18 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return raw["role"] === "orchestrator" || sessionId.endsWith("-orchestrator");
   }
 
+  function isCleanupProtectedSession(
+    project: ProjectConfig,
+    sessionId: string,
+    metadata?: Record<string, string> | null,
+  ): boolean {
+    const canonicalOrchestratorId = `${project.sessionPrefix}-orchestrator`;
+    return (
+      sessionId === canonicalOrchestratorId ||
+      isOrchestratorSession({ id: sessionId, metadata: metadata ?? undefined })
+    );
+  }
+
   function applyMetadataUpdatesToRaw(
     raw: Record<string, string>,
     updates: Partial<Record<string, string>>,
@@ -794,10 +806,19 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       sessionListPromise,
     );
 
-    const handleFromMetadata = session.runtimeHandle !== null;
+    const tmuxNameFromMetadata = session.metadata["tmuxName"]?.trim();
+    const hasTmuxNameFromMetadata =
+      typeof tmuxNameFromMetadata === "string" && tmuxNameFromMetadata.length > 0;
+    const handleFromMetadata = session.runtimeHandle !== null || hasTmuxNameFromMetadata;
     if (!handleFromMetadata) {
       session.runtimeHandle = {
         id: sessionName,
+        runtimeName: project.runtime ?? config.defaults.runtime,
+        data: {},
+      };
+    } else if (!session.runtimeHandle && hasTmuxNameFromMetadata) {
+      session.runtimeHandle = {
+        id: tmuxNameFromMetadata,
         runtimeName: project.runtime ?? config.defaults.runtime,
         data: {},
       };
@@ -1049,6 +1070,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           AO_DATA_DIR: sessionsDir, // Pass sessions directory (not root dataDir)
           AO_SESSION_NAME: sessionId, // User-facing session name
           ...(tmuxName && { AO_TMUX_NAME: tmuxName }), // Tmux session name if using new arch
+          AO_CALLER_TYPE: "agent",
+          AO_PROJECT_ID: spawnConfig.projectId,
+          AO_CONFIG_PATH: config.configPath,
+          ...(config.port !== undefined && config.port !== null && { AO_PORT: String(config.port) }),
         },
       });
     } catch (err) {
@@ -1344,6 +1369,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         AO_DATA_DIR: sessionsDir,
         AO_SESSION_NAME: sessionId,
         ...(tmuxName && { AO_TMUX_NAME: tmuxName }),
+        AO_CALLER_TYPE: "orchestrator",
+        AO_PROJECT_ID: orchestratorConfig.projectId,
+        AO_CONFIG_PATH: config.configPath,
+        ...(config.port !== undefined && config.port !== null && { AO_PORT: String(config.port) }),
       },
     });
 
@@ -1634,16 +1663,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     for (const session of sessions) {
       try {
-        // Never clean up orchestrator sessions — they manage the lifecycle.
-        // Check explicit role metadata first, fall back to naming convention
-        // for pre-existing sessions spawned before the role field was added.
-        if (isOrchestratorSession(session)) {
+        const project = config.projects[session.projectId];
+        if (!project) {
           pushSkipped(session.projectId, session.id);
           continue;
         }
 
-        const project = config.projects[session.projectId];
-        if (!project) {
+        if (isCleanupProtectedSession(project, session.id, session.metadata)) {
           pushSkipped(session.projectId, session.id);
           continue;
         }
@@ -1709,7 +1735,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         const archived = readArchivedMetadataRaw(sessionsDir, archivedId);
         if (!archived) continue;
 
-        if (isOrchestratorSession({ id: archivedId, metadata: archived })) {
+        if (isCleanupProtectedSession(project, archivedId, archived)) {
           pushSkipped(projectKey, archivedId);
           continue;
         }
@@ -2353,6 +2379,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         AO_DATA_DIR: sessionsDir,
         AO_SESSION_NAME: sessionId,
         ...(tmuxName && { AO_TMUX_NAME: tmuxName }),
+        AO_CALLER_TYPE: "agent",
+        ...(projectId && { AO_PROJECT_ID: projectId }),
+        AO_CONFIG_PATH: config.configPath,
+        ...(config.port !== undefined && config.port !== null && { AO_PORT: String(config.port) }),
       },
     });
 
