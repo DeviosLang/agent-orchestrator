@@ -61,17 +61,19 @@ export function Dashboard({
   const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage("ao-sidebar-collapsed", false);
   const [sidebarWidth, setSidebarWidth] = useLocalStorage("ao-sidebar-width", 180);
   const desktopPrefRef = useRef<boolean | null>(null);
+  const sidebarCollapsedRef = useRef(sidebarCollapsed);
+  sidebarCollapsedRef.current = sidebarCollapsed;
   useEffect(() => {
     if (isMobile) {
       if (desktopPrefRef.current === null) {
-        desktopPrefRef.current = sidebarCollapsed;
+        desktopPrefRef.current = sidebarCollapsedRef.current;
       }
       setSidebarCollapsed(true);
     } else if (desktopPrefRef.current !== null) {
       setSidebarCollapsed(desktopPrefRef.current);
       desktopPrefRef.current = null;
     }
-  }, [isMobile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isMobile, setSidebarCollapsed]);
   const { sessions, globalPause } = useSessionEvents(initialSessions, initialGlobalPause, projectId);
   const [rateLimitDismissed, setRateLimitDismissed] = useState(false);
   const [globalPauseDismissed, setGlobalPauseDismissed] = useState(false);
