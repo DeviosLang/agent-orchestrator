@@ -7,8 +7,8 @@
  * 3. Local file paths specified in config (via plugins[].path in agent-orchestrator.yaml)
  */
 
-import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { expandHome } from "./paths.js";
 import type {
   PluginSlot,
   PluginManifest,
@@ -137,10 +137,8 @@ export function createPluginRegistry(): PluginRegistry {
       for (const entry of externalPlugins) {
         if (!entry.path) continue;
 
-        // Resolve ~ to home directory
-        const resolvedPath = entry.path.startsWith("~")
-          ? resolve(homedir(), entry.path.slice(2))
-          : resolve(entry.path);
+        // Resolve ~ to home directory, reusing the shared expandHome utility
+        const resolvedPath = resolve(expandHome(entry.path));
 
         const entryPoint = `${resolvedPath}/dist/index.js`;
 
